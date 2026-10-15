@@ -1177,6 +1177,22 @@ bool EnsurePartyStaticDataLoaded(std::string *error) {
     return true;
 }
 
+std::vector<SpeciesAbilityChoice> GetSpeciesAbilityChoices(const uint16_t species_id) {
+    EnsurePartyStaticDataLoaded(nullptr);
+    const SpeciesAbilitiesMeta meta = GetSpeciesAbilityIds(species_id);
+    std::vector<SpeciesAbilityChoice> out;
+    if (meta.ability_1_id != 0) {
+        out.push_back({0, meta.ability_1_id, GetAbilityNameById(meta.ability_1_id), false});
+    }
+    if (meta.ability_2_id != 0 && meta.ability_2_id != meta.ability_1_id) {
+        out.push_back({1, meta.ability_2_id, GetAbilityNameById(meta.ability_2_id), false});
+    }
+    if (meta.hidden_ability_id != 0) {
+        out.push_back({2, meta.hidden_ability_id, GetAbilityNameById(meta.hidden_ability_id), true});
+    }
+    return out;
+}
+
 BattlePreview CalculateBattlePreview(
     const uint16_t species_id,
     const int level,

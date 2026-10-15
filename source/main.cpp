@@ -10,6 +10,7 @@
 #include <puse/core/Pc.hpp>
 #include <puse/core/PokedexFlags.hpp>
 #include <puse/core/Rtc.hpp>
+#include <puse/core/Roster.hpp>
 #include <puse/core/SaveHealth.hpp>
 #include <puse/core/SaveSession.hpp>
 #include <puse/io/DataLoader.hpp>
@@ -21,6 +22,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <dirent.h>
+#include <functional>
 #include <optional>
 #include <set>
 #include <string>
@@ -68,7 +70,7 @@ std::string Truncate(const std::string &value, size_t width) {
 void DrawHeader(const std::string &title, const std::string &subtitle = "") {
     pspDebugScreenClear();
     pspDebugScreenSetTextColor(0x00FFFFFF);
-    pspDebugScreenPrintf("PUSE-PSP 0.1\n");
+    pspDebugScreenPrintf("PUSE-PSP 0.2.0\n");
     pspDebugScreenSetTextColor(0x0000FFFF);
     pspDebugScreenPrintf("%s\n", Truncate(title, 59).c_str());
     pspDebugScreenSetTextColor(0x00808080);
@@ -96,18 +98,18 @@ uint32_t WaitButton() {
 void Message(const std::string &title, const std::vector<std::string> &lines) {
     DrawHeader(title);
     for (const auto &line : lines) pspDebugScreenPrintf("%s\n", Truncate(line, 59).c_str());
-    pspDebugScreenPrintf("\n[X/O] Continue");
+    pspDebugScreenPrintf("\n[O/X] Continue");
     WaitButton();
 }
 
 bool Confirm(const std::string &title, const std::string &question) {
     DrawHeader(title);
     pspDebugScreenPrintf("%s\n\n", Truncate(question, 59).c_str());
-    pspDebugScreenPrintf("[X] Yes    [O] No\n");
+    pspDebugScreenPrintf("[O] Yes    [X] No\n");
     while (g_running) {
         const uint32_t key = WaitButton();
-        if (key & PSP_CTRL_CROSS) return true;
-        if (key & PSP_CTRL_CIRCLE) return false;
+        if (key & PSP_CTRL_CIRCLE) return true;
+        if (key & PSP_CTRL_CROSS) return false;
     }
     return false;
 }
@@ -134,15 +136,15 @@ int Menu(const std::string &title, const std::vector<std::string> &items,
             }
         }
         pspDebugScreenSetTextColor(0x00808080);
-        pspDebugScreenPrintf("\n[X] Select  [O] Back  [Up/Down] Move\n");
+        pspDebugScreenPrintf("\n[O] Select  [X] Back  [Up/Down] Move\n");
 
         const uint32_t key = WaitButton();
         if (key & PSP_CTRL_UP) selected = (selected + static_cast<int>(items.size()) - 1) % items.size();
         if (key & PSP_CTRL_DOWN) selected = (selected + 1) % items.size();
         if (key & PSP_CTRL_LTRIGGER) selected = std::max(0, selected - kVisibleRows);
         if (key & PSP_CTRL_RTRIGGER) selected = std::min(static_cast<int>(items.size()) - 1, selected + kVisibleRows);
-        if (key & PSP_CTRL_CROSS) return selected;
-        if (key & PSP_CTRL_CIRCLE) return -1;
+        if (key & PSP_CTRL_CIRCLE) return selected;
+        if (key & PSP_CTRL_CROSS) return -1;
     }
     return -1;
 }
@@ -153,7 +155,7 @@ bool EditNumber(const std::string &title, long current, long minimum, long maxim
     while (g_running) {
         DrawHeader(title);
         pspDebugScreenPrintf("Value: %ld\nRange: %ld - %ld\nStep:  %ld\n\n", value, minimum, maximum, step);
-        pspDebugScreenPrintf("Left/Right: change value\nUp/Down: change by 10 x step\nL/R: change step (1, 10, 100, 1000)\n\n[X] Apply  [O] Cancel\n");
+        pspDebugScreenPrintf("Left/Right: change value\nUp/Down: change by 10 x step\nL/R: change step (1, 10, 100, 1000)\n\n[O] Apply  [X] Cancel\n");
         const uint32_t key = WaitButton();
         if (key & PSP_CTRL_LEFT) value = std::max(minimum, value - step);
         if (key & PSP_CTRL_RIGHT) value = std::min(maximum, value + step);
@@ -161,11 +163,11 @@ bool EditNumber(const std::string &title, long current, long minimum, long maxim
         if (key & PSP_CTRL_DOWN) value = std::max(minimum, value - step * 10);
         if (key & PSP_CTRL_LTRIGGER) step = std::max(1L, step / 10);
         if (key & PSP_CTRL_RTRIGGER) step = std::min(1000L, step * 10);
-        if (key & PSP_CTRL_CROSS) {
+        if (key & PSP_CTRL_CIRCLE) {
             *out = value;
             return true;
         }
-        if (key & PSP_CTRL_CIRCLE) return false;
+        if (key & PSP_CTRL_CROSS) return false;
     }
     return false;
 }
@@ -182,7 +184,7 @@ bool EditText(const std::string &title, const std::string &current, size_t max_l
         pspDebugScreenPrintf("^\n\n");
         pspDebugScreenPrintf("Left/Right: cursor   Up/Down: character\n");
         pspDebugScreenPrintf("Triangle: append    Square: delete\n");
-        pspDebugScreenPrintf("[X] Apply  [O] Cancel\n");
+        pspDebugScreenPrintf("[O] Apply  [X] Cancel\n");
         const uint32_t key = WaitButton();
         if (key & PSP_CTRL_LEFT) cursor = cursor == 0 ? value.size() - 1 : cursor - 1;
         if (key & PSP_CTRL_RIGHT) cursor = (cursor + 1) % value.size();
@@ -202,12 +204,12 @@ bool EditText(const std::string &title, const std::string &current, size_t max_l
             if (value.empty()) value = " ";
             cursor = std::min(cursor, value.size() - 1);
         }
-        if (key & PSP_CTRL_CROSS) {
+        if (key & PSP_CTRL_CIRCLE) {
             while (!value.empty() && value.back() == ' ') value.pop_back();
             *out = value;
             return true;
         }
-        if (key & PSP_CTRL_CIRCLE) return false;
+        if (key & PSP_CTRL_CROSS) return false;
     }
     return false;
 }
@@ -301,6 +303,245 @@ std::string NameFor(const std::unordered_map<int, std::string> &db, int id) {
     return found == db.end() ? std::to_string(id) : found->second;
 }
 
+std::string Lower(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](const unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+std::unordered_map<int, std::vector<puse::io::WikiAbility>> g_wiki_abilities;
+
+std::string WikiAbilityName(const uint16_t species, const int slot, const std::string &fallback) {
+    const auto found = g_wiki_abilities.find(species);
+    if (found == g_wiki_abilities.end()) return fallback;
+    const std::string normalized = Lower(fallback);
+    for (const auto &ability : found->second) {
+        if (ability.slot == slot && Lower(ability.name) == normalized) return ability.name;
+    }
+    return fallback;
+}
+
+std::string CatalogName(const std::unordered_map<int, std::string> &db,
+    const std::unordered_map<int, std::string> *aliases, const int id) {
+    std::string name = NameFor(db, id);
+    if (aliases != nullptr) {
+        const auto alias = aliases->find(id);
+        if (alias != aliases->end() && !alias->second.empty()) name += " (" + alias->second + ")";
+    }
+    return name;
+}
+
+int CatalogPicker(const std::string &title,
+    const std::unordered_map<int, std::string> &db,
+    const int current,
+    const std::vector<int> *compatible,
+    const std::unordered_map<int, std::string> *aliases,
+    const std::unordered_map<int, puse::io::MoveDetail> *move_details,
+    const bool include_none,
+    const bool allow_all_toggle = true,
+    const std::unordered_map<int, int> *display_numbers = nullptr) {
+    bool alphabetical = false;
+    bool compatible_only = compatible != nullptr;
+    int selected_id = current;
+    while (g_running) {
+        std::vector<int> ids;
+        if (compatible_only && compatible != nullptr) {
+            ids = *compatible;
+        } else {
+            ids.reserve(db.size());
+            for (const auto &entry : db) if (entry.first > 0) ids.push_back(entry.first);
+        }
+        if (include_none) ids.push_back(0);
+        std::sort(ids.begin(), ids.end(), [&](const int a, const int b) {
+            if (display_numbers == nullptr) return a < b;
+            const auto av = display_numbers->find(a);
+            const auto bv = display_numbers->find(b);
+            const int an = av == display_numbers->end() ? a : av->second;
+            const int bn = bv == display_numbers->end() ? b : bv->second;
+            return an == bn ? a < b : an < bn;
+        });
+        ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+        if (alphabetical) {
+            std::stable_sort(ids.begin(), ids.end(), [&](const int a, const int b) {
+                if (a == b) return false;
+                if (a == 0 || b == 0) return a == 0;
+                return Lower(CatalogName(db, aliases, a)) < Lower(CatalogName(db, aliases, b));
+            });
+        }
+        if (ids.empty()) {
+            Message(title, {"No entries are available for this selection."});
+            return -1;
+        }
+        int selected = 0;
+        const auto found = std::find(ids.begin(), ids.end(), selected_id);
+        if (found != ids.end()) selected = static_cast<int>(found - ids.begin());
+
+        while (g_running) {
+            const int id = ids[static_cast<size_t>(selected)];
+            std::string subtitle = alphabetical ? "Alphabetical" : (display_numbers == nullptr ? "ID order" : "National Dex order");
+            if (compatible != nullptr) subtitle += allow_all_toggle ? (compatible_only ? " | Compatible" : " | All") : " | Filtered list";
+            if (move_details != nullptr) {
+                const auto detail = move_details->find(id);
+                if (detail != move_details->end()) {
+                    subtitle += " | " + detail->second.type + " " + detail->second.category +
+                        " Pwr " + detail->second.power + " Acc " + detail->second.accuracy + " PP " + std::to_string(detail->second.pp);
+                }
+            }
+            DrawHeader(title, subtitle);
+            int first = selected - kVisibleRows / 2;
+            first = std::max(0, std::min(first, std::max(0, static_cast<int>(ids.size()) - kVisibleRows)));
+            const int last = std::min(static_cast<int>(ids.size()), first + kVisibleRows);
+            for (int i = first; i < last; ++i) {
+                const int row_id = ids[static_cast<size_t>(i)];
+                std::string number = std::to_string(row_id);
+                if (display_numbers != nullptr) {
+                    const auto dex = display_numbers->find(row_id);
+                    if (dex != display_numbers->end()) {
+                        number = std::to_string(dex->second);
+                        if (dex->second != row_id) number += " (ID " + std::to_string(row_id) + ")";
+                    }
+                }
+                const std::string label = row_id == 0 ? "0 - None" : number + " - " + CatalogName(db, aliases, row_id);
+                pspDebugScreenSetTextColor(i == selected ? 0x0000FF00 : 0x00FFFFFF);
+                pspDebugScreenPrintf("%c %-57s\n", i == selected ? '>' : ' ', Truncate(label, 57).c_str());
+            }
+            pspDebugScreenSetTextColor(0x00808080);
+            pspDebugScreenPrintf("\n[O] Choose [X] Cancel [Triangle] Sort");
+            if (compatible != nullptr && allow_all_toggle) pspDebugScreenPrintf(" [Square] Mode");
+            if (move_details != nullptr) pspDebugScreenPrintf(" [Select] Details");
+            pspDebugScreenPrintf("\n");
+            const uint32_t key = WaitButton();
+            if (key & PSP_CTRL_UP) selected = (selected + static_cast<int>(ids.size()) - 1) % ids.size();
+            if (key & PSP_CTRL_DOWN) selected = (selected + 1) % ids.size();
+            if (key & PSP_CTRL_LTRIGGER) selected = std::max(0, selected - kVisibleRows);
+            if (key & PSP_CTRL_RTRIGGER) selected = std::min(static_cast<int>(ids.size()) - 1, selected + kVisibleRows);
+            if (key & PSP_CTRL_CIRCLE) return ids[static_cast<size_t>(selected)];
+            if (key & PSP_CTRL_CROSS) return -1;
+            if (key & PSP_CTRL_TRIANGLE) {
+                selected_id = ids[static_cast<size_t>(selected)];
+                alphabetical = !alphabetical;
+                break;
+            }
+            if ((key & PSP_CTRL_SQUARE) && compatible != nullptr && allow_all_toggle) {
+                selected_id = ids[static_cast<size_t>(selected)];
+                compatible_only = !compatible_only;
+                break;
+            }
+            if ((key & PSP_CTRL_SELECT) && move_details != nullptr) {
+                const auto detail = move_details->find(ids[static_cast<size_t>(selected)]);
+                if (detail == move_details->end()) {
+                    Message("Move details", {"No Unbound Wiki details are available."});
+                } else {
+                    Message(CatalogName(db, nullptr, ids[static_cast<size_t>(selected)]), {
+                        "ID: " + std::to_string(ids[static_cast<size_t>(selected)]),
+                        "Type: " + detail->second.type,
+                        "Category: " + detail->second.category,
+                        "Power: " + detail->second.power,
+                        "Accuracy: " + detail->second.accuracy,
+                        "Base PP: " + std::to_string(detail->second.pp),
+                        "Source: Pokemon Unbound Wiki"
+                    });
+                }
+            }
+        }
+    }
+    return -1;
+}
+
+const std::array<const char *, 25> kNatureLabels = {{
+    "0 - Hardy (neutral)", "1 - Lonely (ATK+ / DEF-)", "2 - Brave (ATK+ / SPE-)",
+    "3 - Adamant (ATK+ / SPATK-)", "4 - Naughty (ATK+ / SPDEF-)",
+    "5 - Bold (DEF+ / ATK-)", "6 - Docile (neutral)", "7 - Relaxed (DEF+ / SPE-)",
+    "8 - Impish (DEF+ / SPATK-)", "9 - Lax (DEF+ / SPDEF-)",
+    "10 - Timid (SPE+ / ATK-)", "11 - Hasty (SPE+ / DEF-)", "12 - Serious (neutral)",
+    "13 - Jolly (SPE+ / SPATK-)", "14 - Naive (SPE+ / SPDEF-)",
+    "15 - Modest (SPATK+ / ATK-)", "16 - Mild (SPATK+ / DEF-)",
+    "17 - Quiet (SPATK+ / SPE-)", "18 - Bashful (neutral)", "19 - Rash (SPATK+ / SPDEF-)",
+    "20 - Calm (SPDEF+ / ATK-)", "21 - Gentle (SPDEF+ / DEF-)",
+    "22 - Sassy (SPDEF+ / SPE-)", "23 - Careful (SPDEF+ / SPATK-)", "24 - Quirky (neutral)"
+}};
+
+int NaturePicker(const int current) {
+    std::vector<std::string> labels;
+    for (const char *label : kNatureLabels) labels.emplace_back(label);
+    return Menu("Choose nature", labels, "Number, name, and affected stats", current);
+}
+
+int AbilityPicker(const uint16_t species_id, const int current) {
+    const auto choices = puse::core::GetSpeciesAbilityChoices(species_id);
+    if (choices.empty()) {
+        Message("Ability", {"No Unbound ability data is available."});
+        return -1;
+    }
+    std::vector<std::string> rows;
+    int initial = 0;
+    for (size_t i = 0; i < choices.size(); ++i) {
+        const auto &choice = choices[i];
+        const std::string name = WikiAbilityName(species_id, choice.slot, choice.name);
+        rows.push_back(std::to_string(choice.slot) + " - " + name +
+            (choice.hidden ? " (Hidden Ability)" : " (Ability " + std::to_string(choice.slot + 1) + ")"));
+        if (choice.slot == current) initial = static_cast<int>(i);
+    }
+    const int selected = Menu("Choose ability", rows, "Pokemon Unbound abilities only", initial);
+    return selected < 0 ? -1 : choices[static_cast<size_t>(selected)].slot;
+}
+
+std::string AbilityLabel(const uint16_t species_id, const int current) {
+    for (const auto &choice : puse::core::GetSpeciesAbilityChoices(species_id)) {
+        if (choice.slot == current) return WikiAbilityName(species_id, choice.slot, choice.name) +
+            (choice.hidden ? " (Hidden)" : " (Ability " + std::to_string(choice.slot + 1) + ")");
+    }
+    return "Invalid slot " + std::to_string(current);
+}
+
+std::string NatureLabel(const int nature) {
+    if (nature < 0 || nature >= static_cast<int>(kNatureLabels.size())) return "Unknown";
+    const std::string full = kNatureLabels[static_cast<size_t>(nature)];
+    const size_t dash = full.find(" - ");
+    return dash == std::string::npos ? full : full.substr(dash + 3);
+}
+
+void CompactMoves(std::array<uint16_t, 4> *moves, std::array<uint8_t, 4> *pp_ups = nullptr,
+    std::array<uint8_t, 4> *current_pp = nullptr) {
+    std::array<uint16_t, 4> next_moves{};
+    std::array<uint8_t, 4> next_ups{};
+    std::array<uint8_t, 4> next_pp{};
+    size_t target = 0;
+    for (size_t i = 0; i < moves->size(); ++i) {
+        if ((*moves)[i] == 0) continue;
+        next_moves[target] = (*moves)[i];
+        if (pp_ups != nullptr) next_ups[target] = (*pp_ups)[i];
+        if (current_pp != nullptr) next_pp[target] = (*current_pp)[i];
+        ++target;
+    }
+    *moves = next_moves;
+    if (pp_ups != nullptr) *pp_ups = next_ups;
+    if (current_pp != nullptr) *current_pp = next_pp;
+}
+
+std::vector<int> HoldableItemIds(const std::unordered_map<int, std::string> &items) {
+    puse::core::EnsureBagDataLoaded(nullptr);
+    std::vector<int> ids;
+    for (const auto &entry : items) {
+        const std::string type = puse::core::PocketTypeForItemId(static_cast<uint16_t>(entry.first));
+        if (type != "key" && type != "tm" && type != "hm") ids.push_back(entry.first);
+    }
+    return ids;
+}
+
+struct CreationPlan {
+    int preset = 0;
+    uint16_t species = 1;
+    int level = 5;
+    uint8_t nature = 0;
+    int ability_slot = 0;
+    bool shiny = false;
+    std::array<uint16_t, 4> moves{};
+    std::array<uint8_t, 4> pp_ups{};
+    std::array<uint8_t, 6> ivs{};
+};
+
 class App {
   public:
     void Run();
@@ -310,10 +551,14 @@ class App {
     std::unordered_map<int, std::string> species_;
     std::unordered_map<int, std::string> items_;
     std::unordered_map<int, std::string> moves_;
+    std::unordered_map<int, std::string> form_aliases_;
+    std::unordered_map<int, std::vector<int>> learnsets_;
+    std::unordered_map<int, puse::io::MoveDetail> move_details_;
+    std::unordered_map<int, int> dex_numbers_;
     std::vector<uint8_t> pc_stream_;
     std::string save_path_;
     bool dirty_ = false;
-    bool legit_mode_ = true;
+    bool safeguards_ = true;
 
     bool SelectAndLoadSave();
     bool LoadSave(const std::string &path);
@@ -324,10 +569,17 @@ class App {
     void EditPartyMon(int slot);
     void EditStats(bool ivs, int slot, puse::core::PartyEntry entry);
     void EditPartyMoves(int slot, puse::core::PartyEntry entry);
+    void CreatePartyMon();
+    void DepositParty(int slot);
+    void ReviewPartyLegality(int slot);
     void PcMenu();
     void EditPcMon(int box, int slot);
     void EditPcStats(bool ivs, int box, int slot, puse::core::PcMon mon);
     void EditPcMoves(int box, int slot, puse::core::PcMon mon);
+    void CreatePcMon(int box, int slot);
+    void WithdrawPc(int box, int slot);
+    void ReviewPcLegality(int box, int slot);
+    bool BuildCreationPlan(CreationPlan *plan);
     void BagMenu();
     void MoneyMenu();
     void PokedexMenu();
@@ -337,7 +589,60 @@ class App {
     void AboutScreen();
     bool CommitPc();
     void MarkPartyChanged();
+    std::string SpeciesName(int id) const;
 };
+
+std::string App::SpeciesName(const int id) const {
+    return CatalogName(species_, &form_aliases_, id);
+}
+
+bool App::BuildCreationPlan(CreationPlan *plan) {
+    const int preset = Menu("Creation preset", {
+        "Natural - varied IVs, normal PP",
+        "Competitive - 31 IVs, PP Max",
+        "Custom - create, then open full editor"
+    }, "Created Pokemon are not event/trade legality certified");
+    if (preset < 0) return false;
+    plan->preset = preset;
+    const int species = CatalogPicker("Choose species", species_, plan->species, nullptr, &form_aliases_, nullptr, false, true, &dex_numbers_);
+    if (species < 0) return false;
+    plan->species = static_cast<uint16_t>(species);
+    long level = plan->level;
+    if (!EditNumber("Level", level, 1, 100, &level)) return false;
+    plan->level = static_cast<int>(level);
+    const int nature = NaturePicker(plan->nature);
+    if (nature < 0) return false;
+    plan->nature = static_cast<uint8_t>(nature);
+    const int ability = AbilityPicker(plan->species, 0);
+    if (ability < 0) return false;
+    plan->ability_slot = ability;
+    plan->shiny = Confirm("Shiny", "Create this Pokemon as shiny?");
+
+    if (Confirm("Moves", "Choose up to four compatible moves now?")) {
+        const auto compatible = learnsets_.find(plan->species);
+        const std::vector<int> *allowed = compatible == learnsets_.end() ? nullptr : &compatible->second;
+        for (size_t i = 0; i < plan->moves.size(); ++i) {
+            const int move = CatalogPicker("Choose move " + std::to_string(i + 1), moves_, 0, allowed, nullptr, &move_details_, true);
+            if (move < 0) return false;
+            plan->moves[i] = static_cast<uint16_t>(move);
+            if (move == 0) break;
+        }
+        CompactMoves(&plan->moves);
+    }
+
+    uint32_t seed = static_cast<uint32_t>(plan->species) * 2654435761U ^ static_cast<uint32_t>(plan->level * 977 + plan->nature);
+    for (size_t i = 0; i < plan->ivs.size(); ++i) {
+        seed ^= seed << 13U;
+        seed ^= seed >> 17U;
+        seed ^= seed << 5U;
+        plan->ivs[i] = preset == 0 ? static_cast<uint8_t>(seed & 31U) : 31;
+    }
+    for (size_t i = 0; i < plan->pp_ups.size(); ++i) plan->pp_ups[i] = preset == 1 && plan->moves[i] != 0 ? 3 : 0;
+
+    return Confirm("Create Pokemon",
+        SpeciesName(plan->species) + " Lv." + std::to_string(plan->level) + " | " +
+        NatureLabel(plan->nature) + " | " + AbilityLabel(plan->species, plan->ability_slot));
+}
 
 bool App::LoadAssets() {
     std::string error;
@@ -351,6 +656,14 @@ bool App::LoadAssets() {
     species_ = puse::io::LoadIdNameFile(species_path);
     items_ = puse::io::LoadIdNameFile(items_path);
     moves_ = puse::io::LoadIdNameFile(moves_path);
+    form_aliases_ = puse::io::LoadSpeciesFormAliases(puse::io::ResolveAssetPath("data/species_form_aliases.json"));
+    learnsets_ = puse::io::LoadSpeciesLearnsets(puse::io::ResolveAssetPath("data/wiki_species_learnsets.json"));
+    const auto rom_learnsets = puse::io::LoadSpeciesLearnsets(puse::io::ResolveAssetPath("data/species_learnsets.json"));
+    for (const auto &entry : rom_learnsets) if (learnsets_.find(entry.first) == learnsets_.end()) learnsets_[entry.first] = entry.second;
+    move_details_ = puse::io::LoadMoveDetails(puse::io::ResolveAssetPath("data/move_details.txt"));
+    g_wiki_abilities = puse::io::LoadWikiAbilities(puse::io::ResolveAssetPath("data/wiki_species_abilities.txt"));
+    const auto dex_text = puse::io::LoadIdNameFile(puse::io::ResolveAssetPath("data/pokedex_species_map.txt"));
+    for (const auto &entry : dex_text) dex_numbers_[entry.first] = std::atoi(entry.second.c_str());
     if (species_.empty() || items_.empty() || moves_.empty()) {
         Message("Static data error", {"One or more catalogs could not be loaded.", "Keep the data folder beside EBOOT.PBP."});
         return false;
@@ -401,13 +714,37 @@ bool App::SaveWithBackup() {
         return false;
     }
     const std::string backup = save_path_ + ".puse.bak";
+    const std::string temporary = save_path_ + ".puse.tmp";
+    std::remove(temporary.c_str());
+    if (!session_.ExportToFile(temporary, &error)) {
+        Message("Save failed", {"Could not write the temporary save.", error});
+        return false;
+    }
+    puse::core::SaveSession validation;
+    if (!validation.LoadFromFile(temporary, &error, "unbound-2.1.1.1") ||
+        validation.Buffer() != session_.Buffer()) {
+        std::remove(temporary.c_str());
+        Message("Save failed", {"Temporary save validation failed.", error});
+        return false;
+    }
     if (!CopyFile(save_path_, backup)) {
+        std::remove(temporary.c_str());
         Message("Save failed", {"Could not create backup:", backup});
         return false;
     }
-    if (!session_.ExportToFile(save_path_, &error)) {
+    if (std::rename(temporary.c_str(), save_path_.c_str()) != 0) {
+        std::remove(save_path_.c_str());
+    }
+    if (access(temporary.c_str(), F_OK) == 0 && std::rename(temporary.c_str(), save_path_.c_str()) != 0) {
         CopyFile(backup, save_path_);
-        Message("Save failed", {error, "The backup was restored."});
+        std::remove(temporary.c_str());
+        Message("Save failed", {"Could not replace the original save.", "The backup was restored."});
+        return false;
+    }
+    std::vector<uint8_t> written;
+    if (!ReadFile(save_path_, &written) || written != session_.Buffer()) {
+        CopyFile(backup, save_path_);
+        Message("Save failed", {"Written bytes did not verify.", "The backup was restored."});
         return false;
     }
     const std::string path = save_path_;
@@ -439,7 +776,7 @@ void App::PartyMenu() {
         selected = Menu("Party", rows, "Edit complete party data", selected);
         if (selected < 0) return;
         const auto found = std::find_if(party.begin(), party.end(), [selected](const auto &mon) { return mon.index == selected; });
-        if (found == party.end()) Message("Empty party slot", {"Party insertion is not exposed by PUSE core."});
+        if (found == party.end()) CreatePartyMon();
         else EditPartyMon(selected);
     }
 }
@@ -450,17 +787,17 @@ void App::EditStats(bool ivs, int slot, puse::core::PartyEntry entry) {
     while (g_running) {
         std::vector<std::string> rows;
         for (int i = 0; i < 6; ++i) rows.push_back(std::string(kNames[i]) + ": " + std::to_string(values[i]));
-        const int choice = Menu(ivs ? "Edit IVs" : "Edit EVs", rows, legit_mode_ ? "Legit limits enabled" : "Raw per-stat limits");
+        const int choice = Menu(ivs ? "Edit IVs" : "Edit EVs", rows, safeguards_ ? "Legality Safeguards enabled" : "Raw per-stat limits");
         if (choice < 0) return;
         long value = values[choice];
         const long max_value = ivs ? 31 : 252;
         if (!EditNumber(rows[choice], value, 0, max_value, &value)) continue;
         values[choice] = static_cast<uint8_t>(value);
-        if (!ivs && legit_mode_) {
+        if (!ivs && safeguards_) {
             int total = 0;
             for (uint8_t stat : values) total += stat;
             if (total > 510) {
-                Message("EV limit", {"Total EVs cannot exceed 510 in Legit Mode."});
+                Message("EV limit", {"Legality Safeguards limit total EVs to 510."});
                 values[choice] = ivs ? entry.ivs[choice] : entry.evs[choice];
                 continue;
             }
@@ -476,16 +813,44 @@ void App::EditStats(bool ivs, int slot, puse::core::PartyEntry entry) {
 
 void App::EditPartyMoves(int slot, puse::core::PartyEntry entry) {
     auto move_ids = entry.move_ids;
+    auto move_pp = entry.move_pp;
+    auto pp_ups = entry.move_pp_ups;
     while (g_running) {
         std::vector<std::string> rows;
-        for (int i = 0; i < 4; ++i) rows.push_back(std::to_string(i + 1) + ". " + NameFor(moves_, move_ids[i]) + " [" + std::to_string(move_ids[i]) + "]");
-        const int choice = Menu("Edit moves", rows, "Enter native Unbound move IDs");
+        for (int i = 0; i < 4; ++i) {
+            const int maximum = puse::core::CalcMaxMovePp(move_ids[i], pp_ups[i]);
+            rows.push_back(std::to_string(i + 1) + ". " + std::to_string(move_ids[i]) + " - " + NameFor(moves_, move_ids[i]) +
+                " PP " + std::to_string(move_pp[i]) + "/" + std::to_string(maximum) + " Ups " + std::to_string(pp_ups[i]));
+        }
+        const int choice = Menu("Edit moves", rows, "Unbound Wiki compatibility and details");
         if (choice < 0) return;
-        long value = move_ids[choice];
-        if (!EditNumber(rows[choice], value, 0, 2047, &value)) continue;
-        move_ids[choice] = static_cast<uint16_t>(value);
+        const int action = Menu("Move slot " + std::to_string(choice + 1), {
+            "Choose or remove move", "Set current PP", "Set PP Ups", "Apply PP Max and refill"
+        });
+        if (action < 0) continue;
+        if (action == 0) {
+            const auto compatible = learnsets_.find(entry.species_id);
+            const std::vector<int> *allowed = compatible == learnsets_.end() ? nullptr : &compatible->second;
+            const int selected = CatalogPicker("Choose move", moves_, move_ids[choice], allowed, nullptr, &move_details_, true);
+            if (selected < 0) continue;
+            move_ids[choice] = static_cast<uint16_t>(selected);
+            if (selected == 0) CompactMoves(&move_ids, &pp_ups, &move_pp);
+        } else if (action == 1) {
+            long value = move_pp[choice];
+            const int maximum = puse::core::CalcMaxMovePp(move_ids[choice], pp_ups[choice]);
+            if (!EditNumber("Current PP", value, 0, maximum, &value)) continue;
+            move_pp[choice] = static_cast<uint8_t>(value);
+        } else if (action == 2) {
+            long value = pp_ups[choice];
+            if (!EditNumber("PP Ups", value, 0, 3, &value)) continue;
+            pp_ups[choice] = static_cast<uint8_t>(value);
+            move_pp[choice] = static_cast<uint8_t>(std::min<int>(move_pp[choice], puse::core::CalcMaxMovePp(move_ids[choice], pp_ups[choice])));
+        } else {
+            pp_ups[choice] = move_ids[choice] == 0 ? 0 : 3;
+            move_pp[choice] = static_cast<uint8_t>(puse::core::CalcMaxMovePp(move_ids[choice], pp_ups[choice]));
+        }
         std::string error;
-        if (puse::core::UpdatePartyMoves(session_.MutableBuffer(), slot, move_ids, std::nullopt, std::nullopt, &error)) MarkPartyChanged();
+        if (puse::core::UpdatePartyMoves(session_.MutableBuffer(), slot, move_ids, move_pp, pp_ups, &error)) MarkPartyChanged();
         else Message("Edit failed", {error});
     }
 }
@@ -499,17 +864,20 @@ void App::EditPartyMon(int slot) {
         std::vector<std::string> rows = {
             "Nickname: " + entry.nickname,
             "OT name: " + entry.ot_name,
-            "Species: " + entry.species_name + " [" + std::to_string(entry.species_id) + "]",
+            "Species: " + std::to_string(entry.species_id) + " - " + SpeciesName(entry.species_id),
             "Level: " + std::to_string(entry.level),
-            "Held item: " + NameFor(items_, entry.item_id) + " [" + std::to_string(entry.item_id) + "]",
+            "Held item: " + std::to_string(entry.item_id) + " - " + NameFor(items_, entry.item_id),
             "Happiness: " + std::to_string(entry.happiness),
-            "Nature: " + entry.nature_name + " [" + std::to_string(entry.nature_id) + "]",
+            "Nature: " + std::to_string(entry.nature_id) + " - " + NatureLabel(entry.nature_id),
             std::string("Shiny: ") + (entry.is_shiny ? "Yes" : "No"),
             "Gender: " + entry.gender,
-            "Ability slot: " + std::to_string(entry.current_ability_index),
+            "Ability: " + AbilityLabel(entry.species_id, entry.current_ability_index),
             "IVs...",
             "EVs...",
             "Moves...",
+            "Legality review...",
+            "Deposit or swap with PC...",
+            "Release Pokemon",
         };
         const int choice = Menu(entry.species_name, rows, "Party slot " + std::to_string(slot + 1));
         if (choice < 0) return;
@@ -525,8 +893,26 @@ void App::EditPartyMon(int slot) {
                 if (EditText("Original Trainer", entry.ot_name, 7, &text)) ok = puse::core::UpdatePartyOtName(session_.MutableBuffer(), slot, text, &error);
                 break;
             case 2:
-                value = entry.species_id;
-                if (EditNumber("Species ID", value, 1, puse::core::profile::MaxSpeciesId(), &value)) ok = puse::core::UpdatePartySpecies(session_.MutableBuffer(), slot, value, &error);
+                value = CatalogPicker("Choose species", species_, entry.species_id, nullptr, &form_aliases_, nullptr, false, true, &dex_numbers_);
+                if (value >= 0) {
+                    ok = puse::core::UpdatePartySpecies(session_.MutableBuffer(), slot, value, &error);
+                    if (ok && Confirm("Normalize species", "Reset ability and remove incompatible moves?")) {
+                        const auto abilities = puse::core::GetSpeciesAbilityChoices(static_cast<uint16_t>(value));
+                        if (!abilities.empty()) ok = puse::core::UpdatePartyAbilitySwitch(session_.MutableBuffer(), slot, abilities.front().slot, &error);
+                        auto normalized_moves = entry.move_ids;
+                        auto normalized_ups = entry.move_pp_ups;
+                        auto normalized_pp = entry.move_pp;
+                        const auto learnset = learnsets_.find(static_cast<int>(value));
+                        if (learnset != learnsets_.end()) {
+                            for (auto &move : normalized_moves) {
+                                if (move != 0 && std::find(learnset->second.begin(), learnset->second.end(), move) == learnset->second.end()) move = 0;
+                            }
+                            CompactMoves(&normalized_moves, &normalized_ups, &normalized_pp);
+                            ok = ok && puse::core::UpdatePartyMoves(session_.MutableBuffer(), slot, normalized_moves, normalized_pp, normalized_ups, &error);
+                        }
+                        if (entry.nickname == entry.species_name) puse::core::UpdatePartyNickname(session_.MutableBuffer(), slot, NameFor(species_, value), &error);
+                    }
+                }
                 break;
             case 3: {
                 value = entry.level;
@@ -535,16 +921,19 @@ void App::EditPartyMon(int slot) {
                 break;
             }
             case 4:
-                value = entry.item_id;
-                if (EditNumber("Held item ID", value, 0, 4095, &value)) ok = puse::core::UpdatePartyItem(session_.MutableBuffer(), slot, value, &error);
+                {
+                    const auto held_items = HoldableItemIds(items_);
+                    value = CatalogPicker("Choose held item", items_, entry.item_id, &held_items, nullptr, nullptr, true, false);
+                }
+                if (value >= 0) ok = puse::core::UpdatePartyItem(session_.MutableBuffer(), slot, value, &error);
                 break;
             case 5:
                 value = entry.happiness;
                 if (EditNumber("Happiness", value, 0, 255, &value)) ok = puse::core::UpdatePartyHappiness(session_.MutableBuffer(), slot, value, &error);
                 break;
             case 6:
-                value = entry.nature_id;
-                if (EditNumber("Nature ID", value, 0, 24, &value)) ok = puse::core::UpdatePartyNature(session_.MutableBuffer(), slot, value, &error);
+                value = NaturePicker(entry.nature_id);
+                if (value >= 0) ok = puse::core::UpdatePartyNature(session_.MutableBuffer(), slot, value, &error);
                 break;
             case 7:
                 ok = puse::core::UpdatePartyIdentity(session_.MutableBuffer(), slot, std::optional<bool>(!entry.is_shiny), std::nullopt, &error);
@@ -560,16 +949,122 @@ void App::EditPartyMon(int slot) {
                 }
                 break;
             case 9:
-                value = entry.current_ability_index;
-                if (EditNumber("Ability slot", value, 0, 2, &value)) ok = puse::core::UpdatePartyAbilitySwitch(session_.MutableBuffer(), slot, value, &error);
+                value = AbilityPicker(entry.species_id, entry.current_ability_index);
+                if (value >= 0) ok = puse::core::UpdatePartyAbilitySwitch(session_.MutableBuffer(), slot, value, &error);
                 break;
             case 10: EditStats(true, slot, entry); continue;
             case 11: EditStats(false, slot, entry); continue;
             case 12: EditPartyMoves(slot, entry); continue;
+            case 13: ReviewPartyLegality(slot); continue;
+            case 14: DepositParty(slot); return;
+            case 15:
+                if (Confirm("Release " + entry.species_name, "Remove this Pokemon from the party?")) {
+                    ok = puse::core::ReleasePartyMon(session_.MutableBuffer(), slot, &error);
+                    if (ok) dirty_ = true;
+                    else Message("Release failed", {error});
+                    return;
+                }
+                break;
         }
         if (ok) MarkPartyChanged();
         else if (!error.empty()) Message("Edit failed", {error});
     }
+}
+
+void App::DepositParty(const int slot) {
+    std::vector<std::string> boxes;
+    for (int i = 1; i <= puse::core::PcStreamBoxCount(); ++i) boxes.push_back("Box " + std::to_string(i));
+    const int box_choice = Menu("Deposit to PC", boxes);
+    if (box_choice < 0) return;
+    const int box = box_choice + 1;
+    const auto mons = puse::core::ParsePcBox(pc_stream_, box, species_);
+    std::vector<std::string> rows(puse::core::kPcBoxSlotCount);
+    for (int i = 1; i <= puse::core::kPcBoxSlotCount; ++i) rows[static_cast<size_t>(i - 1)] = std::to_string(i) + ". (empty)";
+    for (const auto &mon : mons) rows[static_cast<size_t>(mon.slot - 1)] = std::to_string(mon.slot) + ". " + SpeciesName(mon.species_id) + " Lv." + std::to_string(mon.level);
+    const int slot_choice = Menu("Choose PC slot", rows, "Occupied slots will be swapped");
+    if (slot_choice < 0) return;
+    const int pc_slot = slot_choice + 1;
+    const bool occupied = std::any_of(mons.begin(), mons.end(), [pc_slot](const auto &mon) { return mon.slot == pc_slot; });
+    if (!Confirm(occupied ? "Swap Pokemon" : "Deposit Pokemon",
+        occupied ? "Swap the party and PC Pokemon?" : "Move this party Pokemon into the PC?")) return;
+    std::string error;
+    if (!puse::core::DepositPartyMon(session_.MutableBuffer(), pc_stream_, slot, box, pc_slot, occupied, &error)) {
+        Message("Transfer failed", {error});
+        return;
+    }
+    CommitPc();
+}
+
+void App::CreatePartyMon() {
+    const auto before = puse::core::ParseParty(session_.Buffer(), species_);
+    if (before.size() >= 6) {
+        Message("Party full", {"Deposit a Pokemon before creating another."});
+        return;
+    }
+    CreationPlan plan{};
+    if (!BuildCreationPlan(&plan)) return;
+    puse::core::TrainerIdentity trainer{};
+    puse::core::ReadTrainerIdentity(session_.Buffer(), &trainer);
+    std::string error;
+    if (!puse::core::InsertPartyMon(session_.MutableBuffer(), plan.species, plan.level, "",
+        trainer.trainer_id, trainer.name, species_, &error)) {
+        Message("Creation failed", {error});
+        return;
+    }
+    const int index = static_cast<int>(before.size());
+    bool ok = puse::core::UpdatePartyNature(session_.MutableBuffer(), index, plan.nature, &error) &&
+        puse::core::UpdatePartyAbilitySwitch(session_.MutableBuffer(), index, plan.ability_slot, &error) &&
+        puse::core::UpdatePartyIvs(session_.MutableBuffer(), index, plan.ivs, &error) &&
+        puse::core::UpdatePartyMoves(session_.MutableBuffer(), index, plan.moves, std::nullopt, plan.pp_ups, &error) &&
+        puse::core::UpdatePartyIdentity(session_.MutableBuffer(), index, plan.shiny, std::nullopt, &error);
+    if (!ok) {
+        Message("Creation warning", {error, "The base Pokemon was created; review it before saving."});
+    }
+    MarkPartyChanged();
+    if (plan.preset == 2) EditPartyMon(index);
+}
+
+void App::ReviewPartyLegality(const int slot) {
+    const auto party = puse::core::ParseParty(session_.Buffer(), species_);
+    const auto found = std::find_if(party.begin(), party.end(), [slot](const auto &entry) { return entry.index == slot; });
+    if (found == party.end()) return;
+    const auto entry = *found;
+    std::vector<std::string> warnings;
+    const auto abilities = puse::core::GetSpeciesAbilityChoices(entry.species_id);
+    if (std::none_of(abilities.begin(), abilities.end(), [&](const auto &choice) { return choice.slot == entry.current_ability_index; })) {
+        warnings.push_back("Ability slot is unavailable for this species.");
+    }
+    const auto learnset = learnsets_.find(entry.species_id);
+    for (size_t i = 0; i < entry.move_ids.size(); ++i) {
+        if (entry.move_ids[i] != 0 && learnset != learnsets_.end() &&
+            std::find(learnset->second.begin(), learnset->second.end(), entry.move_ids[i]) == learnset->second.end()) {
+            warnings.push_back("Move " + std::to_string(i + 1) + " is not documented as compatible.");
+        }
+    }
+    int ev_total = 0;
+    for (const uint8_t ev : entry.evs) ev_total += ev;
+    if (ev_total > 510) warnings.push_back("EV total exceeds 510 (" + std::to_string(ev_total) + ").");
+    if (warnings.empty()) {
+        Message("Legality review", {"No safeguard warnings found.", "Event and trade legality are not certified."});
+        return;
+    }
+    std::vector<std::string> lines = warnings;
+    lines.push_back("Event and trade legality are not certified.");
+    Message("Legality review", lines);
+    if (!Confirm("Apply safe fixes", "Fix ability and remove incompatible moves?")) return;
+    std::string error;
+    if (!abilities.empty()) puse::core::UpdatePartyAbilitySwitch(session_.MutableBuffer(), slot, abilities.front().slot, &error);
+    auto moves = entry.move_ids;
+    auto ups = entry.move_pp_ups;
+    auto pp = entry.move_pp;
+    if (learnset != learnsets_.end()) {
+        for (size_t i = 0; i < moves.size(); ++i) {
+            if (moves[i] != 0 && std::find(learnset->second.begin(), learnset->second.end(), moves[i]) == learnset->second.end()) moves[i] = 0;
+        }
+        CompactMoves(&moves, &ups, &pp);
+        puse::core::UpdatePartyMoves(session_.MutableBuffer(), slot, moves, pp, ups, &error);
+    }
+    MarkPartyChanged();
 }
 
 bool App::CommitPc() {
@@ -589,18 +1084,18 @@ void App::EditPcStats(bool ivs, int box, int slot, puse::core::PcMon mon) {
         std::vector<std::string> rows;
         for (int i = 0; i < 6; ++i) rows.push_back(std::string(kNames[i]) + ": " + std::to_string(values[i]));
         const int choice = Menu(ivs ? "Edit PC IVs" : "Edit PC EVs", rows,
-            legit_mode_ ? "Legit limits enabled" : "Raw per-stat limits");
+            safeguards_ ? "Legality Safeguards enabled" : "Raw per-stat limits");
         if (choice < 0) return;
         long value = values[choice];
         if (!EditNumber(rows[choice], value, 0, ivs ? 31 : 252, &value)) continue;
         const uint8_t old = values[choice];
         values[choice] = static_cast<uint8_t>(value);
-        if (!ivs && legit_mode_) {
+        if (!ivs && safeguards_) {
             int total = 0;
             for (uint8_t stat : values) total += stat;
             if (total > 510) {
                 values[choice] = old;
-                Message("EV limit", {"Total EVs cannot exceed 510 in Legit Mode."});
+                Message("EV limit", {"Legality Safeguards limit total EVs to 510."});
                 continue;
             }
         }
@@ -619,17 +1114,27 @@ void App::EditPcMoves(int box, int slot, puse::core::PcMon mon) {
     while (g_running) {
         std::vector<std::string> rows;
         for (int i = 0; i < 4; ++i) {
-            rows.push_back(std::to_string(i + 1) + ". " + NameFor(moves_, move_ids[i]) +
-                " [" + std::to_string(move_ids[i]) + "] PP Ups " + std::to_string(pp_ups[i]));
+            rows.push_back(std::to_string(i + 1) + ". " + std::to_string(move_ids[i]) + " - " + NameFor(moves_, move_ids[i]) +
+                " Max PP " + std::to_string(puse::core::CalcMaxMovePp(move_ids[i], pp_ups[i])) + " Ups " + std::to_string(pp_ups[i]));
         }
         const int choice = Menu("Edit PC moves", rows, "Enter native Unbound move IDs");
         if (choice < 0) return;
-        const int action = Menu("Move slot " + std::to_string(choice + 1), {"Change move ID", "Change PP Ups"});
+        const int action = Menu("Move slot " + std::to_string(choice + 1), {"Choose or remove move", "Set PP Ups", "Apply PP Max"});
         if (action < 0) continue;
-        long value = action == 0 ? move_ids[choice] : pp_ups[choice];
-        if (!EditNumber(action == 0 ? "Move ID" : "PP Ups", value, 0, action == 0 ? 1023 : 3, &value)) continue;
-        if (action == 0) move_ids[choice] = static_cast<uint16_t>(value);
-        else pp_ups[choice] = static_cast<uint8_t>(value);
+        if (action == 0) {
+            const auto compatible = learnsets_.find(mon.species_id);
+            const std::vector<int> *allowed = compatible == learnsets_.end() ? nullptr : &compatible->second;
+            const int selected = CatalogPicker("Choose move", moves_, move_ids[choice], allowed, nullptr, &move_details_, true);
+            if (selected < 0) continue;
+            move_ids[choice] = static_cast<uint16_t>(selected);
+            if (selected == 0) CompactMoves(&move_ids, &pp_ups);
+        } else if (action == 1) {
+            long value = pp_ups[choice];
+            if (!EditNumber("PP Ups", value, 0, 3, &value)) continue;
+            pp_ups[choice] = static_cast<uint8_t>(value);
+        } else {
+            pp_ups[choice] = move_ids[choice] == 0 ? 0 : 3;
+        }
         std::string error;
         if (puse::core::UpdatePcMonMoves(pc_stream_, box, slot, move_ids, &pp_ups, &error)) CommitPc();
         else Message("Edit failed", {error});
@@ -645,16 +1150,18 @@ void App::EditPcMon(int box, int slot) {
         std::vector<std::string> rows = {
             "Nickname: " + mon.nickname,
             "OT name: " + mon.ot_name,
-            "Species: " + mon.species_name + " [" + std::to_string(mon.species_id) + "]",
+            "Species: " + std::to_string(mon.species_id) + " - " + SpeciesName(mon.species_id),
             "Level: " + std::to_string(mon.level),
-            "Held item: " + NameFor(items_, mon.item_id) + " [" + std::to_string(mon.item_id) + "]",
+            "Held item: " + std::to_string(mon.item_id) + " - " + NameFor(items_, mon.item_id),
             "Happiness: " + std::to_string(mon.happiness),
-            "Nature ID: " + std::to_string(mon.nature_id),
+            "Nature: " + std::to_string(mon.nature_id) + " - " + NatureLabel(mon.nature_id),
             std::string("Shiny: ") + (mon.is_shiny ? "Yes" : "No"),
-            "Ability slot: " + std::to_string(mon.current_ability_index),
+            "Ability: " + AbilityLabel(mon.species_id, mon.current_ability_index),
             "IVs...",
             "EVs...",
             "Moves...",
+            "Legality review...",
+            "Withdraw or swap with Party...",
             "Release Pokemon",
         };
         const int choice = Menu(mon.species_name, rows, "Box " + std::to_string(box) + " Slot " + std::to_string(slot));
@@ -671,34 +1178,56 @@ void App::EditPcMon(int box, int slot) {
                 if (EditText("Original Trainer", mon.ot_name, 7, &text)) ok = puse::core::UpdatePcMonOtName(pc_stream_, box, slot, text, &error);
                 break;
             case 2:
-                value = mon.species_id;
-                if (EditNumber("Species ID", value, 1, puse::core::profile::MaxSpeciesId(), &value)) ok = puse::core::UpdatePcMonSpecies(pc_stream_, box, slot, value, &error);
+                value = CatalogPicker("Choose species", species_, mon.species_id, nullptr, &form_aliases_, nullptr, false, true, &dex_numbers_);
+                if (value >= 0) {
+                    ok = puse::core::UpdatePcMonSpecies(pc_stream_, box, slot, value, &error);
+                    if (ok && Confirm("Normalize species", "Reset ability and remove incompatible moves?")) {
+                        const auto abilities = puse::core::GetSpeciesAbilityChoices(static_cast<uint16_t>(value));
+                        if (!abilities.empty()) ok = puse::core::UpdatePcMonAbilitySwitch(pc_stream_, box, slot, abilities.front().slot, &error);
+                        auto normalized_moves = mon.move_ids;
+                        auto normalized_ups = mon.move_pp_ups;
+                        const auto learnset = learnsets_.find(static_cast<int>(value));
+                        if (learnset != learnsets_.end()) {
+                            for (auto &move : normalized_moves) {
+                                if (move != 0 && std::find(learnset->second.begin(), learnset->second.end(), move) == learnset->second.end()) move = 0;
+                            }
+                            CompactMoves(&normalized_moves, &normalized_ups);
+                            ok = ok && puse::core::UpdatePcMonMoves(pc_stream_, box, slot, normalized_moves, &normalized_ups, &error);
+                        }
+                        if (mon.nickname == mon.species_name) puse::core::UpdatePcMonNickname(pc_stream_, box, slot, NameFor(species_, value), &error);
+                    }
+                }
                 break;
             case 3:
                 value = mon.level;
                 if (EditNumber("Level", value, 1, 100, &value)) ok = puse::core::UpdatePcMonLevel(pc_stream_, box, slot, value, &error);
                 break;
             case 4:
-                value = mon.item_id;
-                if (EditNumber("Held item ID", value, 0, 4095, &value)) ok = puse::core::UpdatePcMonItem(pc_stream_, box, slot, value, &error);
+                {
+                    const auto held_items = HoldableItemIds(items_);
+                    value = CatalogPicker("Choose held item", items_, mon.item_id, &held_items, nullptr, nullptr, true, false);
+                }
+                if (value >= 0) ok = puse::core::UpdatePcMonItem(pc_stream_, box, slot, value, &error);
                 break;
             case 5:
                 value = mon.happiness;
                 if (EditNumber("Happiness", value, 0, 255, &value)) ok = puse::core::UpdatePcMonHappiness(pc_stream_, box, slot, value, &error);
                 break;
             case 6:
-                value = mon.nature_id;
-                if (EditNumber("Nature ID", value, 0, 24, &value)) ok = puse::core::UpdatePcMonNature(pc_stream_, box, slot, value, &error);
+                value = NaturePicker(mon.nature_id);
+                if (value >= 0) ok = puse::core::UpdatePcMonNature(pc_stream_, box, slot, value, &error);
                 break;
             case 7: ok = puse::core::UpdatePcMonShiny(pc_stream_, box, slot, !mon.is_shiny, &error); break;
             case 8:
-                value = mon.current_ability_index;
-                if (EditNumber("Ability slot", value, 0, 2, &value)) ok = puse::core::UpdatePcMonAbilitySwitch(pc_stream_, box, slot, value, &error);
+                value = AbilityPicker(mon.species_id, mon.current_ability_index);
+                if (value >= 0) ok = puse::core::UpdatePcMonAbilitySwitch(pc_stream_, box, slot, value, &error);
                 break;
             case 9: EditPcStats(true, box, slot, mon); continue;
             case 10: EditPcStats(false, box, slot, mon); continue;
             case 11: EditPcMoves(box, slot, mon); continue;
-            case 12:
+            case 12: ReviewPcLegality(box, slot); continue;
+            case 13: WithdrawPc(box, slot); return;
+            case 14:
                 if (Confirm("Release Pokemon", "Permanently clear this PC slot?")) {
                     ok = puse::core::ReleasePcMon(pc_stream_, box, slot, &error);
                     if (ok) CommitPc();
@@ -709,6 +1238,86 @@ void App::EditPcMon(int box, int slot) {
         if (ok) CommitPc();
         else if (!error.empty()) Message("Edit failed", {error});
     }
+}
+
+void App::WithdrawPc(const int box, const int slot) {
+    const auto party = puse::core::ParseParty(session_.Buffer(), species_);
+    int swap_index = -1;
+    if (party.size() >= 6) {
+        std::vector<std::string> rows;
+        for (const auto &entry : party) rows.push_back(std::to_string(entry.index + 1) + ". " + SpeciesName(entry.species_id) + " Lv." + std::to_string(entry.level));
+        const int selected = Menu("Party is full", rows, "Choose a Pokemon to swap into this PC slot");
+        if (selected < 0) return;
+        swap_index = party[static_cast<size_t>(selected)].index;
+    }
+    if (!Confirm(swap_index < 0 ? "Withdraw Pokemon" : "Swap Pokemon",
+        swap_index < 0 ? "Move this PC Pokemon into the party?" : "Swap the selected Party and PC Pokemon?")) return;
+    std::string error;
+    if (!puse::core::WithdrawPcMon(session_.MutableBuffer(), pc_stream_, box, slot, swap_index, &error)) {
+        Message("Transfer failed", {error});
+        return;
+    }
+    CommitPc();
+}
+
+void App::CreatePcMon(const int box, const int slot) {
+    CreationPlan plan{};
+    if (!BuildCreationPlan(&plan)) return;
+    puse::core::TrainerIdentity trainer{};
+    puse::core::ReadTrainerIdentity(session_.Buffer(), &trainer);
+    std::string error;
+    bool ok = puse::core::InsertPcMon(pc_stream_, box, slot, plan.species, plan.level, "",
+        trainer.trainer_id, trainer.name, species_, &error);
+    if (ok) ok = puse::core::UpdatePcMonNature(pc_stream_, box, slot, plan.nature, &error);
+    if (ok) ok = puse::core::UpdatePcMonAbilitySwitch(pc_stream_, box, slot, plan.ability_slot, &error);
+    if (ok) ok = puse::core::UpdatePcMonIvs(pc_stream_, box, slot, plan.ivs, &error);
+    if (ok) ok = puse::core::UpdatePcMonMoves(pc_stream_, box, slot, plan.moves, &plan.pp_ups, &error);
+    if (ok) ok = puse::core::UpdatePcMonShiny(pc_stream_, box, slot, plan.shiny, &error);
+    if (!ok) {
+        Message("Creation failed", {error});
+        return;
+    }
+    CommitPc();
+    if (plan.preset == 2) EditPcMon(box, slot);
+}
+
+void App::ReviewPcLegality(const int box, const int slot) {
+    const auto mons = puse::core::ParsePcBox(pc_stream_, box, species_);
+    const auto found = std::find_if(mons.begin(), mons.end(), [slot](const auto &mon) { return mon.slot == slot; });
+    if (found == mons.end()) return;
+    const auto mon = *found;
+    std::vector<std::string> warnings;
+    const auto abilities = puse::core::GetSpeciesAbilityChoices(mon.species_id);
+    if (std::none_of(abilities.begin(), abilities.end(), [&](const auto &choice) { return choice.slot == mon.current_ability_index; })) warnings.push_back("Ability slot is unavailable for this species.");
+    const auto learnset = learnsets_.find(mon.species_id);
+    for (size_t i = 0; i < mon.move_ids.size(); ++i) {
+        if (mon.move_ids[i] != 0 && learnset != learnsets_.end() &&
+            std::find(learnset->second.begin(), learnset->second.end(), mon.move_ids[i]) == learnset->second.end()) {
+            warnings.push_back("Move " + std::to_string(i + 1) + " is not documented as compatible.");
+        }
+    }
+    int ev_total = 0;
+    for (const uint8_t ev : mon.evs) ev_total += ev;
+    if (ev_total > 510) warnings.push_back("EV total exceeds 510 (" + std::to_string(ev_total) + ").");
+    if (warnings.empty()) {
+        Message("Legality review", {"No safeguard warnings found.", "Event and trade legality are not certified."});
+        return;
+    }
+    warnings.push_back("Event and trade legality are not certified.");
+    Message("Legality review", warnings);
+    if (!Confirm("Apply safe fixes", "Fix ability and remove incompatible moves?")) return;
+    std::string error;
+    if (!abilities.empty()) puse::core::UpdatePcMonAbilitySwitch(pc_stream_, box, slot, abilities.front().slot, &error);
+    auto moves = mon.move_ids;
+    auto ups = mon.move_pp_ups;
+    if (learnset != learnsets_.end()) {
+        for (size_t i = 0; i < moves.size(); ++i) {
+            if (moves[i] != 0 && std::find(learnset->second.begin(), learnset->second.end(), moves[i]) == learnset->second.end()) moves[i] = 0;
+        }
+        CompactMoves(&moves, &ups);
+        puse::core::UpdatePcMonMoves(pc_stream_, box, slot, moves, &ups, &error);
+    }
+    CommitPc();
 }
 
 void App::PcMenu() {
@@ -736,16 +1345,7 @@ void App::PcMenu() {
             EditPcMon(box, slot);
             continue;
         }
-        if (!Confirm("Empty PC slot", "Insert a new Pokemon here?")) continue;
-        long species = 1;
-        long level = 5;
-        if (!EditNumber("Species ID", species, 1, puse::core::profile::MaxSpeciesId(), &species)) continue;
-        if (!EditNumber("Level", level, 1, 100, &level)) continue;
-        puse::core::TrainerIdentity trainer{};
-        puse::core::ReadTrainerIdentity(session_.Buffer(), &trainer);
-        std::string error;
-        if (puse::core::InsertPcMon(pc_stream_, box, slot, species, level, "", trainer.trainer_id, trainer.name, species_, &error)) CommitPc();
-        else Message("Insert failed", {error});
+        CreatePcMon(box, slot);
     }
 }
 
@@ -771,19 +1371,44 @@ void App::BagMenu() {
             Message("Pocket unavailable", {pocket == pockets.end() ? "Pocket not detected." : pocket->second.locked_reason});
             continue;
         }
+        bool alphabetical = false;
         while (g_running) {
             auto slots = puse::core::MapPocketFromAnchor(session_.Buffer(), pocket->second.anchor_offset);
-            std::vector<std::string> rows;
-            for (size_t i = 0; i < slots.size(); ++i) {
-                const auto &slot = slots[i];
-                rows.push_back(std::to_string(i + 1) + ". " + NameFor(items_, slot.item_id) + " x" + std::to_string(slot.qty));
+            std::vector<size_t> order(slots.size());
+            for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+            if (alphabetical) {
+                std::stable_sort(order.begin(), order.end(), [&](const size_t a, const size_t b) {
+                    if (a == b) return false;
+                    if (slots[a].item_id == 0 || slots[b].item_id == 0) return slots[b].item_id == 0 && slots[a].item_id != 0;
+                    return Lower(NameFor(items_, slots[a].item_id)) < Lower(NameFor(items_, slots[b].item_id));
+                });
             }
-            const int slot_choice = Menu(kLabels[pocket_choice], rows, pocket->second.quality);
-            if (slot_choice < 0) break;
+            std::vector<std::string> rows;
+            rows.push_back(std::string("Sort: ") + (alphabetical ? "Alphabetical" : "Bag slot order"));
+            for (const size_t physical : order) {
+                const auto &slot = slots[physical];
+                rows.push_back(std::to_string(physical + 1) + ". " + std::to_string(slot.item_id) + " - " +
+                    NameFor(items_, slot.item_id) + " x" + std::to_string(slot.qty));
+            }
+            const int choice = Menu(kLabels[pocket_choice], rows, pocket->second.quality + " | display sorting only");
+            if (choice < 0) break;
+            if (choice == 0) {
+                alphabetical = !alphabetical;
+                continue;
+            }
+            const size_t slot_choice = order[static_cast<size_t>(choice - 1)];
             auto slot = slots[slot_choice];
-            long item = slot.item_id;
+            std::vector<int> allowed;
+            for (const auto &entry : items_) {
+                std::string type = puse::core::PocketTypeForItemId(static_cast<uint16_t>(entry.first));
+                if (type == "hm") type = "tm";
+                if (type == "generic") type = "main";
+                if (type == kTypes[pocket_choice]) allowed.push_back(entry.first);
+            }
+            long item = CatalogPicker(slot.item_id == 0 ? "Create item" : "Choose item", items_, slot.item_id,
+                &allowed, nullptr, nullptr, true, false);
+            if (item < 0) continue;
             long qty = slot.qty;
-            if (!EditNumber("Item ID", item, 0, 4095, &item)) continue;
             const std::string type = puse::core::PocketTypeForItemId(static_cast<uint16_t>(item));
             if (type == "key" || type == "tm" || type == "hm") qty = item == 0 ? 0 : 1;
             else if (!EditNumber("Quantity", qty, 0, 999, &qty)) continue;
@@ -821,15 +1446,16 @@ void App::PokedexMenu() {
     long species = 1;
     while (g_running) {
         const auto flags = puse::core::GetPokedexFlags(session_.Buffer(), species);
-        const std::string name = NameFor(species_, species);
+        const std::string name = SpeciesName(species);
         const int choice = Menu("Pokedex", {
-            "Species: " + name + " [" + std::to_string(species) + "]",
+            "Species: " + std::to_string(species) + " - " + name,
             std::string("Seen: ") + (flags.seen ? "Yes" : "No"),
             std::string("Caught: ") + (flags.caught ? "Yes" : "No"),
         }, flags.trackable ? "National Dex ID " + std::to_string(puse::core::DexIdForSpecies(species)) : "Species is not trackable");
         if (choice < 0) return;
         if (choice == 0) {
-            EditNumber("Species ID", species, 1, puse::core::profile::MaxSpeciesId(), &species);
+            const int selected = CatalogPicker("Choose species", species_, species, nullptr, &form_aliases_, nullptr, false, true, &dex_numbers_);
+            if (selected >= 0) species = selected;
             continue;
         }
         if (!flags.trackable) {
@@ -991,7 +1617,7 @@ void App::MainMenu() {
             "RTC Recovery",
             "Game Progress",
             "Save Health",
-            std::string("Legit Mode: ") + (legit_mode_ ? "On" : "Off"),
+            std::string("Legality Safeguards: ") + (safeguards_ ? "On" : "Off"),
             std::string("Save changes") + (dirty_ ? " *" : ""),
             "Load another save",
             "About",
@@ -1009,7 +1635,15 @@ void App::MainMenu() {
             case 5: RtcMenu(); break;
             case 6: GameProgressScreen(); break;
             case 7: SaveHealthScreen(); break;
-            case 8: legit_mode_ = !legit_mode_; break;
+            case 8:
+                safeguards_ = !safeguards_;
+                Message("Legality Safeguards", {
+                    safeguards_ ? "Enabled." : "Disabled.",
+                    "Checks EV totals, species abilities, and documented",
+                    "Pokemon Unbound move compatibility.",
+                    "This does not certify event or trade legality."
+                });
+                break;
             case 9:
                 if (!dirty_) Message("Save", {"There are no unsaved changes."});
                 else if (Confirm("Save changes", "Create a backup and overwrite the selected save?")) SaveWithBackup();

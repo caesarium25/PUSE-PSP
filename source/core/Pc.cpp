@@ -655,8 +655,19 @@ bool InsertPcMon(std::vector<uint8_t> &stream,
     // Zero-fill the slot
     std::fill(mon, mon + kPcMonSize, 0);
 
-    // PID: deterministic from species (matches backend formula)
-    const uint32_t pid = static_cast<uint32_t>((static_cast<uint64_t>(species_id) * 2654435761ULL) & 0xFFFFFFFFULL);
+    uint32_t pid = static_cast<uint32_t>((static_cast<uint64_t>(species_id) * 2654435761ULL) & 0xFFFFFFFFULL) ^
+        otid ^ static_cast<uint32_t>((box << 16) | slot);
+    bool duplicate = true;
+    while (duplicate) {
+        duplicate = false;
+        for (size_t offset = 0; offset + kPcMonSize <= stream.size(); offset += kPcMonSize) {
+            if ((stream.data() + offset) != mon && ReadU32Le(stream.data() + offset, kPcPidOff) == pid) {
+                pid += 0x9E3779B9U;
+                duplicate = true;
+                break;
+            }
+        }
+    }
     WriteU32Le(mon, kPcPidOff, pid);
     WriteU32Le(mon, kPcOtidOff, otid);
 

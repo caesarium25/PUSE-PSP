@@ -18,6 +18,13 @@ struct BattlePreview {
     std::string hidden_power_type;
 };
 
+struct SpeciesAbilityChoice {
+    int slot;
+    uint16_t ability_id;
+    std::string name;
+    bool hidden;
+};
+
 struct PartyEntry {
     int index;
     uint32_t pid;
@@ -75,6 +82,7 @@ std::vector<PartyEntry> ParseParty(
 );
 
 bool EnsurePartyStaticDataLoaded(std::string *error = nullptr);
+std::vector<SpeciesAbilityChoice> GetSpeciesAbilityChoices(uint16_t species_id);
 BattlePreview CalculateBattlePreview(
     uint16_t species_id,
     int level,

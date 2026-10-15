@@ -1,5 +1,6 @@
 /build/
 /dist/
+/outputs/
 *.obj
 *.pdb
 *.ilk
