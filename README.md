@@ -17,8 +17,10 @@ backup before replacing the original save.
 
 ## Download and install
 
-1. Download `PUSE-PSP-v0.2.0.zip` from the repository's
-   [Releases](../../releases/latest) page.
+**[Download PUSE-PSP v0.2.0](https://github.com/caesarium25/PUSE-PSP/releases/download/v0.2.0/PUSE-PSP-v0.2.0.zip)**
+
+1. Download `PUSE-PSP-v0.2.0.zip` using the link above. Older and future builds
+   are available on the repository's [Releases](../../releases) page.
 2. Extract the complete `PUSE-PSP` folder to `ms0:/PSP/GAME/`.
 3. Confirm that `EBOOT.PBP` and the `data` folder are both present inside
    `ms0:/PSP/GAME/PUSE-PSP/`.
