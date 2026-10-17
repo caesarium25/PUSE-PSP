@@ -1,86 +1,163 @@
 # PUSE-PSP
 
-PUSE-PSP is a native PlayStation Portable port of the save-editing engines from
-[PUSE](https://github.com/Zannael/PUSE). It follows the same model as a Nintendo
-DS homebrew save editor: launch the application from the PSP menu, select a save
-on the Memory Stick, edit it, and write it back with an automatic backup.
+**PUSE-PSP** is an experimental, completely offline Pokemon Unbound save editor
+that runs as native PlayStation Portable homebrew. It ports the save-editing
+engines and data catalogs from [Zannael's PUSE](https://github.com/Zannael/PUSE)
+to the PSP, making it possible to edit a save directly from the Memory Stick
+without moving it to a computer or uploading it anywhere.
 
-## Current features
+It follows the same idea as save editors packaged as Nintendo DS homebrew:
+launch PUSE-PSP from the PSP Game menu, choose a `.sav` or `.srm` file, make the
+edits, and write the save back. The editor validates the result and creates a
+backup before replacing the original save.
 
-- Searches TempGBA and common PSP folders for 128 KiB `.sav` and `.srm` files.
-- Validates Pokémon Unbound's save container before editing.
-- Party and PC editing with named, sortable species, item, nature, ability, and
-  move pickers. Regional and alternate forms show their form labels.
-- Pokémon Unbound-specific abilities are limited to the selected species' first,
-  second (when present), and hidden ability.
-- Move selection supports **Compatible** and **All Moves** modes. Compatible
-  moves and displayed type/category/power/accuracy/PP come from the
-  [Pokémon Unbound Wiki](https://unboundwiki.com/), with Unbound 2.1.1.1's own
-  ROM-derived tables used to verify IDs and fill forms the wiki does not split.
-- Current PP, PP Ups, PP Max, move removal, and automatic move-slot compaction.
-- Party and PC creation with Natural, Competitive, and Custom presets.
-- Release from Party or PC, plus Party/PC deposit, withdrawal, and swapping.
-- Species-change normalization and Legality Safeguards for EV totals, ability
-  slots, and documented Unbound move compatibility. This is not an event or
-  trade-legality certificate.
-- Bag pocket detection, ID/alphabetical display sorting, item creation from the
-  correct pocket catalog, quantity editing, and item removal.
-- Money and Battle Point editing.
-- Pokédex seen/caught flags.
-- RTC Time Fixer reset and legacy Quick Fix candidates.
-- Game-progress and save-health inspection.
-- Validated temporary writes and an automatic `.puse.bak` backup before every
-  original-save replacement.
+> [!WARNING]
+> This port is experimental. Keep a separate copy of your save. Exit Pokemon
+> Unbound and TempGBA completely before opening PUSE-PSP.
 
-## Install
+## Download and install
 
-Copy the complete `PUSE-PSP` folder to:
+1. Download `PUSE-PSP-v0.2.0.zip` from the repository's
+   [Releases](../../releases/latest) page.
+2. Extract the complete `PUSE-PSP` folder to `ms0:/PSP/GAME/`.
+3. Confirm that `EBOOT.PBP` and the `data` folder are both present inside
+   `ms0:/PSP/GAME/PUSE-PSP/`.
+4. Start **PUSE-PSP** from the PSP Game menu.
+5. Select a supported Pokemon Unbound save from the file browser.
 
-```text
-ms0:/PSP/GAME/PUSE-PSP/
-```
+The application scans TempGBA and common PSP folders for 128 KiB `.sav` and
+`.srm` files. It does not require Wi-Fi or an internet connection.
 
-The `data` folder must remain beside `EBOOT.PBP`. Start **PUSE-PSP** from the PSP
-Game menu. Use `O` to select/confirm and `X` to cancel/go back.
+## Controls
 
-Catalog controls:
+| Button | Action |
+| --- | --- |
+| `D-pad` | Navigate and change values |
+| `O` | Select or confirm |
+| `X` | Cancel or go back |
+| `Triangle` | Switch numeric/ID and alphabetical sorting in catalogs |
+| `Square` | Switch Compatible and All Moves modes in the move catalog |
+| `L` / `R` | Move one page in long catalogs |
+| `Select` | Show full details for the highlighted move |
 
-- `Triangle`: switch between numeric and alphabetical sorting.
-- `Square`: switch between Compatible and All Moves where available.
-- `L` / `R`: move by a page.
-- `Select`: show full move details.
+## Features
 
-## Safety
+### Party and PC
 
-Exit Pokémon Unbound and TempGBA before opening the editor. PUSE-PSP creates
-`<save>.puse.bak` before overwriting a selected save. Keep an additional manual
-backup while this port is experimental.
+- Edit species, level, nature, ability, held item, moves, IVs, EVs, nickname,
+  friendship, gender, shiny state, Pokerus, and related stored data.
+- Browse named and sortable species, item, nature, ability, and move catalogs.
+  Regional and alternate forms include their form labels.
+- Show only the selected species' first ability, second ability when present,
+  and hidden ability.
+- Select moves from **Compatible** or **All Moves** mode and view their Unbound
+  type, category, power, accuracy, and PP.
+- Edit current PP and PP Ups, apply PP Max, remove moves, and compact empty move
+  slots automatically.
+- Create Pokemon in the Party or PC with Natural, Competitive, or Custom presets.
+- Release Pokemon from either location. The editor protects the last remaining
+  Party Pokemon.
+- Deposit, withdraw, and swap Pokemon between the Party and PC.
 
-Created Pokémon use the current trainer's OT name and trainer ID, calculated
-experience, valid species abilities, and selected Unbound-compatible moves.
-Unbound's compact PC format does not preserve a conventional met date/location,
-so PUSE-PSP does not fabricate one. Created Pokémon may therefore be structurally
-valid for Unbound without passing external event or trade-legality checks.
+Created Pokemon use the current trainer's OT name and trainer ID, calculated
+experience, a valid species ability, and the selected Unbound-compatible moves.
+Pokemon Unbound's compact PC record does not retain a conventional met date or
+location, so PUSE-PSP does not invent those fields. A created Pokemon can be
+structurally valid for Unbound without passing external event or trade-legality
+checks.
 
-## Build
+### Other save data
+
+- Create, edit, sort, and remove items in the correct Bag pocket.
+- Edit money and Battle Points.
+- Edit Pokedex Seen and Caught flags.
+- Reset the one-time RTC Time Fixer NPC and inspect legacy Quick Fix candidates.
+- Inspect game progress and save health.
+
+### Legality Safeguards
+
+Legality Safeguards can review the total EV count, the selected species' ability
+slot, and move compatibility documented for Pokemon Unbound. It can repair an
+invalid ability selection and remove incompatible moves.
+
+This mode is a structural guardrail, not a full legality checker. It does not
+certify encounter location, event distribution, trade history, or competitive
+legality.
+
+## Save safety
+
+Before replacing a save, PUSE-PSP:
+
+1. Writes the edited data to a temporary file.
+2. Reloads and validates that temporary file.
+3. Creates `<save name>.puse.bak` beside the original save.
+4. Replaces the original and verifies the bytes written.
+5. Restores the backup if replacement or verification fails.
+
+The backup is protection against a failed write, not a substitute for keeping a
+separate manual backup before using an experimental editor.
+
+## Compatibility and data sources
+
+The current PSP interface supports **Pokemon Unbound 2.1.1.1** saves. PUSE's
+vendored engine also contains Radical Red profile data, but that profile remains
+disabled until it receives device-level round-trip testing on PSP.
+
+Move details, compatibility lists, and ability references are compiled for
+offline use from the [Pokemon Unbound Wiki](https://unboundwiki.com/). Exact
+species/form slots and IDs are checked against Pokemon Unbound 2.1.1.1
+ROM-derived tables. PUSE-PSP does not use Wikipedia or a general/mainline
+Pokemon wiki for its move or ability behavior.
+
+Forms that share a National Pokedex number receive the documented move union
+when the Unbound Wiki does not publish separate learnsets for those forms.
+
+## Build and test
 
 The included `build.ps1` expects a PSPDEV toolchain at `../../tools/pspdev`.
 
 ```powershell
-.\build.ps1
+.\build.ps1 -Clean
 ```
 
-`tools/build_wiki_move_details.py` rebuilds the bundled offline move and
-compatibility tables exclusively from `unboundwiki.com`. The PSP does not need
-network access.
+To run the host-side save round-trip tests against a disposable Unbound save:
 
-## Credits and license
+```powershell
+.\test-core.ps1 -SavePath "C:\path\to\backup.sav"
+```
 
-The save engines and catalog data are derived from PUSE by Zannael and its
-contributors under the MIT License. See `LICENSE-PUSE`. PUSE-PSP's platform code
-is also released under the MIT License.
+To smoke-test the resulting EBOOT in PPSSPP:
 
-Move details and compatibility labels are compiled from the Pokémon Unbound Wiki;
-no Wikipedia or general/mainline Pokémon wiki supplies move or ability data.
+```powershell
+.\test-ppsspp.ps1
+```
 
-Pokémon, Pokémon Unbound, and related assets belong to their respective owners.
+`tools/build_wiki_move_details.py` rebuilds the bundled offline move,
+compatibility, and ability reference tables exclusively from `unboundwiki.com`.
+The PSP itself never connects to the wiki.
+
+## Credits
+
+**PUSE-PSP exists because of [Zannael's PUSE](https://github.com/Zannael/PUSE).**
+Zannael designed and implemented the upstream save editor, reverse-engineered
+the supported save structures, and published the portable save engines and data
+catalogs this PSP port builds upon. PUSE contributors are credited with the
+upstream project.
+
+The vendored PUSE code is based on revision
+[`eab18a7`](https://github.com/Zannael/PUSE/commit/eab18a7baacec0db27ea19422d0e7e5d7ba44fab)
+from October 15, 2026. Detailed provenance is recorded in [UPSTREAM.md](UPSTREAM.md),
+and the upstream MIT license is included as [LICENSE-PUSE](LICENSE-PUSE).
+
+Move details and compatibility labels are compiled from the
+[Pokemon Unbound Wiki](https://unboundwiki.com/).
+
+Pokemon, Pokemon Unbound, and related names and assets belong to their respective
+owners. PUSE-PSP is an unofficial community project and is not affiliated with
+Nintendo, The Pokemon Company, Game Freak, or the Pokemon Unbound team.
+
+## License
+
+PUSE-PSP's PSP-specific platform code is released under the [MIT License](LICENSE).
+Vendored PUSE components remain covered by the included upstream
+[MIT License](LICENSE-PUSE).
