@@ -24,6 +24,7 @@ jobs:
         run: |
           if gh release view v0.2.0 >/dev/null 2>&1; then
             gh release upload v0.2.0 release-assets/PUSE-PSP-v0.2.0.zip --clobber
+            gh release edit v0.2.0 --notes-file release-assets/v0.2.0.md
           else
             gh release create v0.2.0 \
               release-assets/PUSE-PSP-v0.2.0.zip \

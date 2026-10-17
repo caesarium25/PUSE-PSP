@@ -13,7 +13,7 @@ backup before replacing the original save.
 
 > [!WARNING]
 > This port is experimental. Keep a separate copy of your save. Exit Pokemon
-> Unbound and TempGBA completely before opening PUSE-PSP.
+> Unbound and your GBA emulator completely before opening PUSE-PSP.
 
 ## Download and install
 
