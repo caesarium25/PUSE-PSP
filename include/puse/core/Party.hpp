@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <array>
 #include <string>
@@ -89,6 +90,11 @@ BattlePreview CalculateBattlePreview(
     uint8_t nature_id,
     const std::array<uint8_t, 6> &ivs,
     const std::array<uint8_t, 6> &evs
+);
+int ClampLegalEvTarget(
+    const std::array<uint8_t, 6> &evs,
+    std::size_t stat_index,
+    int requested
 );
 
 bool UpdatePartyOtName(std::vector<uint8_t> &buffer, int index, const std::string &name, std::string *error = nullptr);

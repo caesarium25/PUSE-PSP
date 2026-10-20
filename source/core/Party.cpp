@@ -1226,6 +1226,21 @@ BattlePreview CalculateBattlePreview(
     return out;
 }
 
+int ClampLegalEvTarget(const std::array<uint8_t, 6> &evs, const size_t stat_index,
+                       const int requested) {
+    if (stat_index >= evs.size()) return 0;
+    const int current = evs[stat_index];
+    int total = 0;
+    int other_total = 0;
+    for (size_t i = 0; i < evs.size(); ++i) {
+        total += evs[i];
+        if (i != stat_index) other_total += evs[i];
+    }
+    const int clamped = std::clamp(requested, 0, 252);
+    if (total > 510) return clamped > current ? current : clamped;
+    return std::min(clamped, std::max(0, 510 - other_total));
+}
+
 std::vector<PartyEntry> ParseParty(
     const std::vector<uint8_t> &buffer,
     const std::unordered_map<int, std::string> &species_db

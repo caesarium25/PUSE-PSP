@@ -17,9 +17,9 @@ backup before replacing the original save.
 
 ## Download and install
 
-**[Download PUSE-PSP v0.2.0](https://github.com/caesarium25/PUSE-PSP/releases/download/v0.2.0/PUSE-PSP-v0.2.0.zip)**
+**[Download PUSE-PSP v0.3.0](https://github.com/caesarium25/PUSE-PSP/releases/download/v0.3.0/PUSE-PSP-v0.3.0.zip)**
 
-1. Download `PUSE-PSP-v0.2.0.zip` using the link above. Older and future builds
+1. Download `PUSE-PSP-v0.3.0.zip` using the link above. Older and future builds
    are available on the repository's [Releases](../../releases) page.
 2. Extract the complete `PUSE-PSP` folder to `ms0:/PSP/GAME/`.
 3. Confirm that `EBOOT.PBP` and the `data` folder are both present inside
@@ -42,6 +42,10 @@ The application scans TempGBA and common PSP folders for 128 KiB `.sav` and
 | `L` / `R` | Move one page in long catalogs |
 | `Select` | Show full details for the highlighted move |
 
+In the IV and EV editors, `Triangle` sets the selected value to its legal
+maximum, `Square` clears it, and `Select` toggles changes from the original
+calculated stats. `L` and `R` change the selected value by 10.
+
 ## Features
 
 ### Party and PC
@@ -54,8 +58,14 @@ The application scans TempGBA and common PSP folders for 128 KiB `.sav` and
   and hidden ability.
 - Select moves from **Compatible** or **All Moves** mode and view their Unbound
   type, category, power, accuracy, and PP.
+- See live calculated HP, Attack, Defense, Special Attack, Special Defense, and
+  Speed while viewing a Pokemon or editing its species, level, nature, IVs, or
+  EVs. The IV editor also shows Hidden Power type.
+- See total EVs and remaining points out of 510. EV Max uses only the legal
+  points remaining; existing over-limit saves may be reduced but not increased.
 - Edit current PP and PP Ups, apply PP Max, remove moves, and compact empty move
-  slots automatically.
+  slots automatically. Choosing a move gives it PP Max by default and refills
+  current PP for Party Pokemon.
 - Create Pokemon in the Party or PC with Natural, Competitive, or Custom presets.
 - Release Pokemon from either location. The editor protects the last remaining
   Party Pokemon.
@@ -76,15 +86,23 @@ checks.
 - Reset the one-time RTC Time Fixer NPC and inspect legacy Quick Fix candidates.
 - Inspect game progress and save health.
 
-### Legality Safeguards
+### Editing safeguards
 
-Legality Safeguards can review the total EV count, the selected species' ability
-slot, and move compatibility documented for Pokemon Unbound. It can repair an
-invalid ability selection and remove incompatible moves.
+IV limits (0-31), per-stat EV limits (0-252), and the 510 total EV limit are
+always enforced. There is no raw editing mode. Changes shown in the live stat
+panel are previews until `O` is pressed; `X` discards the draft.
 
-This mode is a structural guardrail, not a full legality checker. It does not
-certify encounter location, event distribution, trade history, or competitive
-legality.
+The separate Legality Review can inspect the total EV count, selected species'
+ability slot, and move compatibility documented for Pokemon Unbound. It can
+repair an invalid ability selection and remove incompatible moves.
+
+These safeguards are structural guardrails, not a full legality checker. They do
+not certify encounter location, event distribution, trade history, or
+competitive legality.
+
+Calculated Stats follow the Pokemon's saved species, level, nature, IVs, and
+EVs. They do not include held-item, ability, weather, status, or battle-stage
+modifiers.
 
 ## Save safety
 

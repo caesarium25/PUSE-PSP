@@ -138,6 +138,15 @@ int main(int argc, char **argv) {
     Require(puse::core::CalcMaxMovePp(89, 3) >= puse::core::CalcMaxMovePp(89, 0),
         "PP Max calculation does not reduce move PP");
 
+    Require(puse::core::ClampLegalEvTarget({252, 252, 0, 0, 0, 0}, 2, 252) == 6,
+        "EV Max uses only the six points remaining under 510");
+    Require(puse::core::ClampLegalEvTarget({252, 152, 100, 0, 0, 0}, 2, 252) == 106,
+        "EV Max includes the selected stat's existing points");
+    Require(puse::core::ClampLegalEvTarget({252, 252, 10, 0, 0, 0}, 2, 11) == 10,
+        "over-limit EV data cannot be increased");
+    Require(puse::core::ClampLegalEvTarget({252, 252, 10, 0, 0, 0}, 2, 9) == 9,
+        "over-limit EV data can be reduced incrementally");
+
     {
         auto created_save = changed;
         const auto existing_party = puse::core::ParseParty(created_save, species);

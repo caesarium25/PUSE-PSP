@@ -1,0 +1,34 @@
+name: Publish v0.3.0
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/publish-v0.3.0.yml
+      - release-assets/PUSE-PSP-v0.3.0.zip
+      - release-assets/v0.3.0.md
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v0.3.0 >/dev/null 2>&1; then
+            gh release upload v0.3.0 release-assets/PUSE-PSP-v0.3.0.zip --clobber
+            gh release edit v0.3.0 --notes-file release-assets/v0.3.0.md
+          else
+            gh release create v0.3.0 \
+              release-assets/PUSE-PSP-v0.3.0.zip \
+              --title "PUSE-PSP v0.3.0" \
+              --notes-file release-assets/v0.3.0.md \
+              --prerelease
+          fi

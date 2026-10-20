@@ -31,7 +31,7 @@
 #include <unordered_map>
 #include <vector>
 
-PSP_MODULE_INFO("PUSE-PSP", PSP_MODULE_USER, 0, 1);
+PSP_MODULE_INFO("PUSE-PSP", PSP_MODULE_USER, 0, 3);
 PSP_MAIN_THREAD_ATTR(PSP_THREAD_ATTR_USER | PSP_THREAD_ATTR_VFPU);
 PSP_HEAP_SIZE_KB(-1024);
 
@@ -70,7 +70,7 @@ std::string Truncate(const std::string &value, size_t width) {
 void DrawHeader(const std::string &title, const std::string &subtitle = "") {
     pspDebugScreenClear();
     pspDebugScreenSetTextColor(0x00FFFFFF);
-    pspDebugScreenPrintf("PUSE-PSP 0.2.0\n");
+    pspDebugScreenPrintf("PUSE-PSP 0.3.0\n");
     pspDebugScreenSetTextColor(0x0000FFFF);
     pspDebugScreenPrintf("%s\n", Truncate(title, 59).c_str());
     pspDebugScreenSetTextColor(0x00808080);
@@ -147,6 +147,99 @@ int Menu(const std::string &title, const std::vector<std::string> &items,
         if (key & PSP_CTRL_CROSS) return -1;
     }
     return -1;
+}
+
+void DrawBattlePreview(const puse::core::BattlePreview &preview,
+                       const puse::core::BattlePreview *baseline = nullptr,
+                       const bool show_differences = false) {
+    pspDebugScreenSetTextColor(0x0000FFFF);
+    pspDebugScreenPrintf("Calculated Stats\n");
+    if (!preview.available) {
+        pspDebugScreenSetTextColor(0x00C0C0C0);
+        pspDebugScreenPrintf("Unavailable for this species.\n\n");
+        return;
+    }
+    static const char *kNames[] = {"HP", "ATK", "DEF", "SPE", "SPA", "SPD"};
+    const auto print_stat = [&](const int index) {
+        pspDebugScreenSetTextColor(0x00FFFFFF);
+        pspDebugScreenPrintf("%s %3u", kNames[index], preview.stats[index]);
+        if (show_differences && baseline != nullptr && baseline->available) {
+            const int delta = static_cast<int>(preview.stats[index]) - baseline->stats[index];
+            pspDebugScreenPrintf("(%+d)", delta);
+        }
+    };
+    print_stat(0); pspDebugScreenPrintf("  "); print_stat(1); pspDebugScreenPrintf("  "); print_stat(2); pspDebugScreenPrintf("\n");
+    print_stat(4); pspDebugScreenPrintf("  "); print_stat(5); pspDebugScreenPrintf("  "); print_stat(3); pspDebugScreenPrintf("\n");
+    pspDebugScreenSetTextColor(0x00808080);
+    pspDebugScreenPrintf("No battle modifiers (item/ability/weather/status/stages).\n");
+}
+
+int PokemonMenu(const std::string &title, const std::vector<std::string> &items,
+                const std::string &subtitle, const puse::core::BattlePreview &preview) {
+    if (items.empty()) return -1;
+    constexpr int kRows = 15;
+    int selected = 0;
+    while (g_running) {
+        DrawHeader(title, subtitle);
+        DrawBattlePreview(preview);
+        int first = selected - kRows / 2;
+        first = std::max(0, std::min(first, std::max(0, static_cast<int>(items.size()) - kRows)));
+        const int last = std::min(static_cast<int>(items.size()), first + kRows);
+        for (int i = first; i < last; ++i) {
+            pspDebugScreenSetTextColor(i == selected ? 0x0000FF00 : 0x00FFFFFF);
+            pspDebugScreenPrintf("%c %-57s\n", i == selected ? '>' : ' ', Truncate(items[i], 57).c_str());
+        }
+        pspDebugScreenSetTextColor(0x00808080);
+        pspDebugScreenPrintf("[O] Select  [X] Back  [Up/Down] Move\n");
+        const uint32_t key = WaitButton();
+        if (key & PSP_CTRL_UP) selected = (selected + static_cast<int>(items.size()) - 1) % items.size();
+        if (key & PSP_CTRL_DOWN) selected = (selected + 1) % items.size();
+        if (key & PSP_CTRL_LTRIGGER) selected = std::max(0, selected - kRows);
+        if (key & PSP_CTRL_RTRIGGER) selected = std::min(static_cast<int>(items.size()) - 1, selected + kRows);
+        if (key & PSP_CTRL_CIRCLE) return selected;
+        if (key & PSP_CTRL_CROSS) return -1;
+    }
+    return -1;
+}
+
+bool EditLevelWithPreview(const std::string &title, const int current,
+                          const uint16_t species, const uint8_t nature,
+                          const std::array<uint8_t, 6> &ivs,
+                          const std::array<uint8_t, 6> &evs, long *out) {
+    int value = std::clamp(current, 1, 100);
+    const auto baseline = puse::core::CalculateBattlePreview(species, current, nature, ivs, evs);
+    while (g_running) {
+        DrawHeader(title, "Live preview; O applies, X discards");
+        const auto preview = puse::core::CalculateBattlePreview(species, value, nature, ivs, evs);
+        DrawBattlePreview(preview, &baseline, true);
+        pspDebugScreenSetTextColor(0x00FFFFFF);
+        pspDebugScreenPrintf("\nLevel: %d\n\n", value);
+        pspDebugScreenSetTextColor(0x00808080);
+        pspDebugScreenPrintf("Left/Right: -/+1   L/R: -/+10\n[O] Apply  [X] Cancel\n");
+        const uint32_t key = WaitButton();
+        if (key & PSP_CTRL_LEFT) value = std::max(1, value - 1);
+        if (key & PSP_CTRL_RIGHT) value = std::min(100, value + 1);
+        if (key & PSP_CTRL_LTRIGGER) value = std::max(1, value - 10);
+        if (key & PSP_CTRL_RTRIGGER) value = std::min(100, value + 10);
+        if (key & PSP_CTRL_CIRCLE) { *out = value; return true; }
+        if (key & PSP_CTRL_CROSS) return false;
+    }
+    return false;
+}
+
+bool ConfirmWithBattlePreview(const std::string &title, const std::string &question,
+                              const puse::core::BattlePreview &preview) {
+    while (g_running) {
+        DrawHeader(title);
+        DrawBattlePreview(preview);
+        pspDebugScreenSetTextColor(0x00FFFFFF);
+        pspDebugScreenPrintf("\n%s\n\n", Truncate(question, 59).c_str());
+        pspDebugScreenPrintf("[O] Yes    [X] No\n");
+        const uint32_t key = WaitButton();
+        if (key & PSP_CTRL_CIRCLE) return true;
+        if (key & PSP_CTRL_CROSS) return false;
+    }
+    return false;
 }
 
 bool EditNumber(const std::string &title, long current, long minimum, long maximum, long *out) {
@@ -340,7 +433,8 @@ int CatalogPicker(const std::string &title,
     const std::unordered_map<int, puse::io::MoveDetail> *move_details,
     const bool include_none,
     const bool allow_all_toggle = true,
-    const std::unordered_map<int, int> *display_numbers = nullptr) {
+    const std::unordered_map<int, int> *display_numbers = nullptr,
+    const std::function<void(int)> &draw_preview = {}) {
     bool alphabetical = false;
     bool compatible_only = compatible != nullptr;
     int selected_id = current;
@@ -389,9 +483,11 @@ int CatalogPicker(const std::string &title,
                 }
             }
             DrawHeader(title, subtitle);
-            int first = selected - kVisibleRows / 2;
-            first = std::max(0, std::min(first, std::max(0, static_cast<int>(ids.size()) - kVisibleRows)));
-            const int last = std::min(static_cast<int>(ids.size()), first + kVisibleRows);
+            if (draw_preview) draw_preview(id);
+            const int visible_rows = draw_preview ? 15 : kVisibleRows;
+            int first = selected - visible_rows / 2;
+            first = std::max(0, std::min(first, std::max(0, static_cast<int>(ids.size()) - visible_rows)));
+            const int last = std::min(static_cast<int>(ids.size()), first + visible_rows);
             for (int i = first; i < last; ++i) {
                 const int row_id = ids[static_cast<size_t>(i)];
                 std::string number = std::to_string(row_id);
@@ -414,8 +510,8 @@ int CatalogPicker(const std::string &title,
             const uint32_t key = WaitButton();
             if (key & PSP_CTRL_UP) selected = (selected + static_cast<int>(ids.size()) - 1) % ids.size();
             if (key & PSP_CTRL_DOWN) selected = (selected + 1) % ids.size();
-            if (key & PSP_CTRL_LTRIGGER) selected = std::max(0, selected - kVisibleRows);
-            if (key & PSP_CTRL_RTRIGGER) selected = std::min(static_cast<int>(ids.size()) - 1, selected + kVisibleRows);
+            if (key & PSP_CTRL_LTRIGGER) selected = std::max(0, selected - visible_rows);
+            if (key & PSP_CTRL_RTRIGGER) selected = std::min(static_cast<int>(ids.size()) - 1, selected + visible_rows);
             if (key & PSP_CTRL_CIRCLE) return ids[static_cast<size_t>(selected)];
             if (key & PSP_CTRL_CROSS) return -1;
             if (key & PSP_CTRL_TRIANGLE) {
@@ -462,10 +558,94 @@ const std::array<const char *, 25> kNatureLabels = {{
     "22 - Sassy (SPDEF+ / SPE-)", "23 - Careful (SPDEF+ / SPATK-)", "24 - Quirky (neutral)"
 }};
 
-int NaturePicker(const int current) {
-    std::vector<std::string> labels;
-    for (const char *label : kNatureLabels) labels.emplace_back(label);
-    return Menu("Choose nature", labels, "Number, name, and affected stats", current);
+int NaturePicker(const int current, const uint16_t species, const int level,
+                 const std::array<uint8_t, 6> &ivs,
+                 const std::array<uint8_t, 6> &evs) {
+    constexpr int kRows = 14;
+    int selected = std::clamp(current, 0, 24);
+    const auto baseline = puse::core::CalculateBattlePreview(species, level, static_cast<uint8_t>(current), ivs, evs);
+    while (g_running) {
+        DrawHeader("Choose nature", "Live preview; O applies, X discards");
+        const auto preview = puse::core::CalculateBattlePreview(species, level, static_cast<uint8_t>(selected), ivs, evs);
+        DrawBattlePreview(preview, &baseline, true);
+        int first = selected - kRows / 2;
+        first = std::max(0, std::min(first, 25 - kRows));
+        const int last = std::min(25, first + kRows);
+        for (int i = first; i < last; ++i) {
+            pspDebugScreenSetTextColor(i == selected ? 0x0000FF00 : 0x00FFFFFF);
+            pspDebugScreenPrintf("%c %-57s\n", i == selected ? '>' : ' ', Truncate(kNatureLabels[i], 57).c_str());
+        }
+        pspDebugScreenSetTextColor(0x00808080);
+        pspDebugScreenPrintf("[O] Choose [X] Cancel [L/R] Page\n");
+        const uint32_t key = WaitButton();
+        if (key & PSP_CTRL_UP) selected = (selected + 24) % 25;
+        if (key & PSP_CTRL_DOWN) selected = (selected + 1) % 25;
+        if (key & PSP_CTRL_LTRIGGER) selected = std::max(0, selected - kRows);
+        if (key & PSP_CTRL_RTRIGGER) selected = std::min(24, selected + kRows);
+        if (key & PSP_CTRL_CIRCLE) return selected;
+        if (key & PSP_CTRL_CROSS) return -1;
+    }
+    return -1;
+}
+
+bool EditStatDraft(const std::string &title, const bool ivs,
+                   const uint16_t species, const int level, const uint8_t nature,
+                   const std::array<uint8_t, 6> &original,
+                   const std::array<uint8_t, 6> &other_values,
+                   std::array<uint8_t, 6> *out) {
+    static const char *kNames[] = {"HP ", "ATK", "DEF", "SPE", "SPA", "SPD"};
+    auto values = original;
+    int selected = 0;
+    bool show_differences = true;
+    const auto original_preview = ivs
+        ? puse::core::CalculateBattlePreview(species, level, nature, original, other_values)
+        : puse::core::CalculateBattlePreview(species, level, nature, other_values, original);
+    while (g_running) {
+        const auto preview = ivs
+            ? puse::core::CalculateBattlePreview(species, level, nature, values, other_values)
+            : puse::core::CalculateBattlePreview(species, level, nature, other_values, values);
+        DrawHeader(title, "Draft preview; O applies all changes, X discards");
+        DrawBattlePreview(preview, &original_preview, show_differences);
+        if (ivs) {
+            pspDebugScreenSetTextColor(0x00C0C0C0);
+            pspDebugScreenPrintf("Hidden Power: %s\n", preview.hidden_power_type.c_str());
+        } else {
+            int total = 0;
+            for (const uint8_t value : values) total += value;
+            pspDebugScreenSetTextColor(total > 510 ? 0x000000FF : 0x00C0C0C0);
+            if (total > 510) pspDebugScreenPrintf("EV Total: %d/510  OVER LIMIT by %d\n", total, total - 510);
+            else pspDebugScreenPrintf("EV Total: %d/510  Remaining: %d\n", total, 510 - total);
+        }
+        for (int i = 0; i < 6; ++i) {
+            pspDebugScreenSetTextColor(i == selected ? 0x0000FF00 : 0x00FFFFFF);
+            const int delta = static_cast<int>(preview.stats[i]) - original_preview.stats[i];
+            pspDebugScreenPrintf("%c %s %s %3u   Stat %3u", i == selected ? '>' : ' ', kNames[i],
+                ivs ? "IV" : "EV", values[i], preview.stats[i]);
+            if (show_differences && delta != 0) pspDebugScreenPrintf(" (%+d)", delta);
+            pspDebugScreenPrintf("\n");
+        }
+        pspDebugScreenSetTextColor(0x00808080);
+        pspDebugScreenPrintf("Up/Down stat  Left/Right -/+1  L/R -/+10\n");
+        pspDebugScreenPrintf("Triangle Max  Square Zero  Select Deltas\n");
+        pspDebugScreenPrintf("[O] Apply  [X] Discard\n");
+        const uint32_t key = WaitButton();
+        if (key & PSP_CTRL_UP) selected = (selected + 5) % 6;
+        if (key & PSP_CTRL_DOWN) selected = (selected + 1) % 6;
+        int requested = values[selected];
+        if (key & PSP_CTRL_LEFT) requested -= 1;
+        if (key & PSP_CTRL_RIGHT) requested += 1;
+        if (key & PSP_CTRL_LTRIGGER) requested -= 10;
+        if (key & PSP_CTRL_RTRIGGER) requested += 10;
+        if (key & PSP_CTRL_TRIANGLE) requested = ivs ? 31 : 252;
+        if (key & PSP_CTRL_SQUARE) requested = 0;
+        if (key & PSP_CTRL_SELECT) show_differences = !show_differences;
+        values[selected] = static_cast<uint8_t>(ivs
+            ? std::clamp(requested, 0, 31)
+            : puse::core::ClampLegalEvTarget(values, static_cast<size_t>(selected), requested));
+        if (key & PSP_CTRL_CIRCLE) { *out = values; return true; }
+        if (key & PSP_CTRL_CROSS) return false;
+    }
+    return false;
 }
 
 int AbilityPicker(const uint16_t species_id, const int current) {
@@ -542,6 +722,18 @@ struct CreationPlan {
     std::array<uint8_t, 6> ivs{};
 };
 
+std::array<uint8_t, 6> CreationIvs(const uint16_t species, const int preset) {
+    std::array<uint8_t, 6> ivs{};
+    uint32_t seed = static_cast<uint32_t>(species) * 2654435761U ^ static_cast<uint32_t>(preset * 977 + 0x50555345U);
+    for (auto &iv : ivs) {
+        seed ^= seed << 13U;
+        seed ^= seed >> 17U;
+        seed ^= seed << 5U;
+        iv = preset == 0 ? static_cast<uint8_t>(seed & 31U) : 31;
+    }
+    return ivs;
+}
+
 class App {
   public:
     void Run();
@@ -558,7 +750,6 @@ class App {
     std::vector<uint8_t> pc_stream_;
     std::string save_path_;
     bool dirty_ = false;
-    bool safeguards_ = true;
 
     bool SelectAndLoadSave();
     bool LoadSave(const std::string &path);
@@ -598,19 +789,25 @@ std::string App::SpeciesName(const int id) const {
 
 bool App::BuildCreationPlan(CreationPlan *plan) {
     const int preset = Menu("Creation preset", {
-        "Natural - varied IVs, normal PP",
+        "Natural - varied IVs, PP Max",
         "Competitive - 31 IVs, PP Max",
         "Custom - create, then open full editor"
     }, "Created Pokemon are not event/trade legality certified");
     if (preset < 0) return false;
     plan->preset = preset;
-    const int species = CatalogPicker("Choose species", species_, plan->species, nullptr, &form_aliases_, nullptr, false, true, &dex_numbers_);
+    const int species = CatalogPicker("Choose species", species_, plan->species, nullptr, &form_aliases_, nullptr, false, true, &dex_numbers_,
+        [&](const int candidate) {
+            const auto candidate_ivs = CreationIvs(static_cast<uint16_t>(candidate), preset);
+            DrawBattlePreview(puse::core::CalculateBattlePreview(
+                static_cast<uint16_t>(candidate), plan->level, plan->nature, candidate_ivs, {}));
+        });
     if (species < 0) return false;
     plan->species = static_cast<uint16_t>(species);
+    plan->ivs = CreationIvs(plan->species, preset);
     long level = plan->level;
-    if (!EditNumber("Level", level, 1, 100, &level)) return false;
+    if (!EditLevelWithPreview("Level", plan->level, plan->species, plan->nature, plan->ivs, {}, &level)) return false;
     plan->level = static_cast<int>(level);
-    const int nature = NaturePicker(plan->nature);
+    const int nature = NaturePicker(plan->nature, plan->species, plan->level, plan->ivs, {});
     if (nature < 0) return false;
     plan->nature = static_cast<uint8_t>(nature);
     const int ability = AbilityPicker(plan->species, 0);
@@ -630,18 +827,12 @@ bool App::BuildCreationPlan(CreationPlan *plan) {
         CompactMoves(&plan->moves);
     }
 
-    uint32_t seed = static_cast<uint32_t>(plan->species) * 2654435761U ^ static_cast<uint32_t>(plan->level * 977 + plan->nature);
-    for (size_t i = 0; i < plan->ivs.size(); ++i) {
-        seed ^= seed << 13U;
-        seed ^= seed >> 17U;
-        seed ^= seed << 5U;
-        plan->ivs[i] = preset == 0 ? static_cast<uint8_t>(seed & 31U) : 31;
-    }
-    for (size_t i = 0; i < plan->pp_ups.size(); ++i) plan->pp_ups[i] = preset == 1 && plan->moves[i] != 0 ? 3 : 0;
+    for (size_t i = 0; i < plan->pp_ups.size(); ++i) plan->pp_ups[i] = plan->moves[i] != 0 ? 3 : 0;
 
-    return Confirm("Create Pokemon",
+    return ConfirmWithBattlePreview("Create Pokemon",
         SpeciesName(plan->species) + " Lv." + std::to_string(plan->level) + " | " +
-        NatureLabel(plan->nature) + " | " + AbilityLabel(plan->species, plan->ability_slot));
+        NatureLabel(plan->nature) + " | " + AbilityLabel(plan->species, plan->ability_slot),
+        puse::core::CalculateBattlePreview(plan->species, plan->level, plan->nature, plan->ivs, {}));
 }
 
 bool App::LoadAssets() {
@@ -782,33 +973,16 @@ void App::PartyMenu() {
 }
 
 void App::EditStats(bool ivs, int slot, puse::core::PartyEntry entry) {
-    static const char *kNames[] = {"HP", "Attack", "Defense", "Speed", "Sp. Attack", "Sp. Defense"};
-    auto values = ivs ? entry.ivs : entry.evs;
-    while (g_running) {
-        std::vector<std::string> rows;
-        for (int i = 0; i < 6; ++i) rows.push_back(std::string(kNames[i]) + ": " + std::to_string(values[i]));
-        const int choice = Menu(ivs ? "Edit IVs" : "Edit EVs", rows, safeguards_ ? "Legality Safeguards enabled" : "Raw per-stat limits");
-        if (choice < 0) return;
-        long value = values[choice];
-        const long max_value = ivs ? 31 : 252;
-        if (!EditNumber(rows[choice], value, 0, max_value, &value)) continue;
-        values[choice] = static_cast<uint8_t>(value);
-        if (!ivs && safeguards_) {
-            int total = 0;
-            for (uint8_t stat : values) total += stat;
-            if (total > 510) {
-                Message("EV limit", {"Legality Safeguards limit total EVs to 510."});
-                values[choice] = ivs ? entry.ivs[choice] : entry.evs[choice];
-                continue;
-            }
-        }
-        std::string error;
-        const bool ok = ivs
-            ? puse::core::UpdatePartyIvs(session_.MutableBuffer(), slot, values, &error)
-            : puse::core::UpdatePartyEvs(session_.MutableBuffer(), slot, values, &error);
-        if (ok) MarkPartyChanged();
-        else Message("Edit failed", {error});
-    }
+    std::array<uint8_t, 6> values{};
+    if (!EditStatDraft(ivs ? "Edit IVs" : "Edit EVs", ivs, entry.species_id, entry.level,
+                       entry.nature_id, ivs ? entry.ivs : entry.evs,
+                       ivs ? entry.evs : entry.ivs, &values)) return;
+    std::string error;
+    const bool ok = ivs
+        ? puse::core::UpdatePartyIvs(session_.MutableBuffer(), slot, values, &error)
+        : puse::core::UpdatePartyEvs(session_.MutableBuffer(), slot, values, &error);
+    if (ok) MarkPartyChanged();
+    else Message("Edit failed", {error});
 }
 
 void App::EditPartyMoves(int slot, puse::core::PartyEntry entry) {
@@ -835,6 +1009,10 @@ void App::EditPartyMoves(int slot, puse::core::PartyEntry entry) {
             if (selected < 0) continue;
             move_ids[choice] = static_cast<uint16_t>(selected);
             if (selected == 0) CompactMoves(&move_ids, &pp_ups, &move_pp);
+            else {
+                pp_ups[choice] = 3;
+                move_pp[choice] = static_cast<uint8_t>(puse::core::CalcMaxMovePp(selected, 3));
+            }
         } else if (action == 1) {
             long value = move_pp[choice];
             const int maximum = puse::core::CalcMaxMovePp(move_ids[choice], pp_ups[choice]);
@@ -879,7 +1057,7 @@ void App::EditPartyMon(int slot) {
             "Deposit or swap with PC...",
             "Release Pokemon",
         };
-        const int choice = Menu(entry.species_name, rows, "Party slot " + std::to_string(slot + 1));
+        const int choice = PokemonMenu(entry.species_name, rows, "Party slot " + std::to_string(slot + 1), entry.battle_preview);
         if (choice < 0) return;
         std::string error;
         bool ok = false;
@@ -893,7 +1071,10 @@ void App::EditPartyMon(int slot) {
                 if (EditText("Original Trainer", entry.ot_name, 7, &text)) ok = puse::core::UpdatePartyOtName(session_.MutableBuffer(), slot, text, &error);
                 break;
             case 2:
-                value = CatalogPicker("Choose species", species_, entry.species_id, nullptr, &form_aliases_, nullptr, false, true, &dex_numbers_);
+                value = CatalogPicker("Choose species", species_, entry.species_id, nullptr, &form_aliases_, nullptr, false, true, &dex_numbers_,
+                    [&](const int candidate) { DrawBattlePreview(puse::core::CalculateBattlePreview(
+                        static_cast<uint16_t>(candidate), entry.level, entry.nature_id, entry.ivs, entry.evs),
+                        &entry.battle_preview, true); });
                 if (value >= 0) {
                     ok = puse::core::UpdatePartySpecies(session_.MutableBuffer(), slot, value, &error);
                     if (ok && Confirm("Normalize species", "Reset ability and remove incompatible moves?")) {
@@ -917,7 +1098,8 @@ void App::EditPartyMon(int slot) {
             case 3: {
                 value = entry.level;
                 puse::core::PartyLevelResult result{};
-                if (EditNumber("Level", value, 1, 100, &value)) ok = puse::core::UpdatePartyLevel(session_.MutableBuffer(), slot, value, std::nullopt, &result, &error);
+                if (EditLevelWithPreview("Level", entry.level, entry.species_id, entry.nature_id, entry.ivs, entry.evs, &value))
+                    ok = puse::core::UpdatePartyLevel(session_.MutableBuffer(), slot, value, std::nullopt, &result, &error);
                 break;
             }
             case 4:
@@ -932,7 +1114,7 @@ void App::EditPartyMon(int slot) {
                 if (EditNumber("Happiness", value, 0, 255, &value)) ok = puse::core::UpdatePartyHappiness(session_.MutableBuffer(), slot, value, &error);
                 break;
             case 6:
-                value = NaturePicker(entry.nature_id);
+                value = NaturePicker(entry.nature_id, entry.species_id, entry.level, entry.ivs, entry.evs);
                 if (value >= 0) ok = puse::core::UpdatePartyNature(session_.MutableBuffer(), slot, value, &error);
                 break;
             case 7:
@@ -1078,34 +1260,16 @@ bool App::CommitPc() {
 }
 
 void App::EditPcStats(bool ivs, int box, int slot, puse::core::PcMon mon) {
-    static const char *kNames[] = {"HP", "Attack", "Defense", "Speed", "Sp. Attack", "Sp. Defense"};
-    auto values = ivs ? mon.ivs : mon.evs;
-    while (g_running) {
-        std::vector<std::string> rows;
-        for (int i = 0; i < 6; ++i) rows.push_back(std::string(kNames[i]) + ": " + std::to_string(values[i]));
-        const int choice = Menu(ivs ? "Edit PC IVs" : "Edit PC EVs", rows,
-            safeguards_ ? "Legality Safeguards enabled" : "Raw per-stat limits");
-        if (choice < 0) return;
-        long value = values[choice];
-        if (!EditNumber(rows[choice], value, 0, ivs ? 31 : 252, &value)) continue;
-        const uint8_t old = values[choice];
-        values[choice] = static_cast<uint8_t>(value);
-        if (!ivs && safeguards_) {
-            int total = 0;
-            for (uint8_t stat : values) total += stat;
-            if (total > 510) {
-                values[choice] = old;
-                Message("EV limit", {"Legality Safeguards limit total EVs to 510."});
-                continue;
-            }
-        }
-        std::string error;
-        const bool ok = ivs
-            ? puse::core::UpdatePcMonIvs(pc_stream_, box, slot, values, &error)
-            : puse::core::UpdatePcMonEvs(pc_stream_, box, slot, values, &error);
-        if (ok) CommitPc();
-        else Message("Edit failed", {error});
-    }
+    std::array<uint8_t, 6> values{};
+    if (!EditStatDraft(ivs ? "Edit PC IVs" : "Edit PC EVs", ivs, mon.species_id, mon.level,
+                       mon.nature_id, ivs ? mon.ivs : mon.evs,
+                       ivs ? mon.evs : mon.ivs, &values)) return;
+    std::string error;
+    const bool ok = ivs
+        ? puse::core::UpdatePcMonIvs(pc_stream_, box, slot, values, &error)
+        : puse::core::UpdatePcMonEvs(pc_stream_, box, slot, values, &error);
+    if (ok) CommitPc();
+    else Message("Edit failed", {error});
 }
 
 void App::EditPcMoves(int box, int slot, puse::core::PcMon mon) {
@@ -1128,6 +1292,7 @@ void App::EditPcMoves(int box, int slot, puse::core::PcMon mon) {
             if (selected < 0) continue;
             move_ids[choice] = static_cast<uint16_t>(selected);
             if (selected == 0) CompactMoves(&move_ids, &pp_ups);
+            else pp_ups[choice] = 3;
         } else if (action == 1) {
             long value = pp_ups[choice];
             if (!EditNumber("PP Ups", value, 0, 3, &value)) continue;
@@ -1164,7 +1329,8 @@ void App::EditPcMon(int box, int slot) {
             "Withdraw or swap with Party...",
             "Release Pokemon",
         };
-        const int choice = Menu(mon.species_name, rows, "Box " + std::to_string(box) + " Slot " + std::to_string(slot));
+        const int choice = PokemonMenu(mon.species_name, rows,
+            "Box " + std::to_string(box) + " Slot " + std::to_string(slot), mon.battle_preview);
         if (choice < 0) return;
         std::string error;
         bool ok = false;
@@ -1178,7 +1344,10 @@ void App::EditPcMon(int box, int slot) {
                 if (EditText("Original Trainer", mon.ot_name, 7, &text)) ok = puse::core::UpdatePcMonOtName(pc_stream_, box, slot, text, &error);
                 break;
             case 2:
-                value = CatalogPicker("Choose species", species_, mon.species_id, nullptr, &form_aliases_, nullptr, false, true, &dex_numbers_);
+                value = CatalogPicker("Choose species", species_, mon.species_id, nullptr, &form_aliases_, nullptr, false, true, &dex_numbers_,
+                    [&](const int candidate) { DrawBattlePreview(puse::core::CalculateBattlePreview(
+                        static_cast<uint16_t>(candidate), mon.level, mon.nature_id, mon.ivs, mon.evs),
+                        &mon.battle_preview, true); });
                 if (value >= 0) {
                     ok = puse::core::UpdatePcMonSpecies(pc_stream_, box, slot, value, &error);
                     if (ok && Confirm("Normalize species", "Reset ability and remove incompatible moves?")) {
@@ -1200,7 +1369,8 @@ void App::EditPcMon(int box, int slot) {
                 break;
             case 3:
                 value = mon.level;
-                if (EditNumber("Level", value, 1, 100, &value)) ok = puse::core::UpdatePcMonLevel(pc_stream_, box, slot, value, &error);
+                if (EditLevelWithPreview("Level", mon.level, mon.species_id, mon.nature_id, mon.ivs, mon.evs, &value))
+                    ok = puse::core::UpdatePcMonLevel(pc_stream_, box, slot, value, &error);
                 break;
             case 4:
                 {
@@ -1214,7 +1384,7 @@ void App::EditPcMon(int box, int slot) {
                 if (EditNumber("Happiness", value, 0, 255, &value)) ok = puse::core::UpdatePcMonHappiness(pc_stream_, box, slot, value, &error);
                 break;
             case 6:
-                value = NaturePicker(mon.nature_id);
+                value = NaturePicker(mon.nature_id, mon.species_id, mon.level, mon.ivs, mon.evs);
                 if (value >= 0) ok = puse::core::UpdatePcMonNature(pc_stream_, box, slot, value, &error);
                 break;
             case 7: ok = puse::core::UpdatePcMonShiny(pc_stream_, box, slot, !mon.is_shiny, &error); break;
@@ -1617,7 +1787,6 @@ void App::MainMenu() {
             "RTC Recovery",
             "Game Progress",
             "Save Health",
-            std::string("Legality Safeguards: ") + (safeguards_ ? "On" : "Off"),
             std::string("Save changes") + (dirty_ ? " *" : ""),
             "Load another save",
             "About",
@@ -1636,25 +1805,16 @@ void App::MainMenu() {
             case 6: GameProgressScreen(); break;
             case 7: SaveHealthScreen(); break;
             case 8:
-                safeguards_ = !safeguards_;
-                Message("Legality Safeguards", {
-                    safeguards_ ? "Enabled." : "Disabled.",
-                    "Checks EV totals, species abilities, and documented",
-                    "Pokemon Unbound move compatibility.",
-                    "This does not certify event or trade legality."
-                });
-                break;
-            case 9:
                 if (!dirty_) Message("Save", {"There are no unsaved changes."});
                 else if (Confirm("Save changes", "Create a backup and overwrite the selected save?")) SaveWithBackup();
                 break;
-            case 10:
+            case 9:
                 if (dirty_ && !Confirm("Unsaved changes", "Discard changes and load another save?")) break;
                 session_.Clear();
                 return;
                 break;
-            case 11: AboutScreen(); break;
-            case 12:
+            case 10: AboutScreen(); break;
+            case 11:
                 if (dirty_ && !Confirm("Unsaved changes", "Exit without saving?")) break;
                 g_running = false;
                 return;
