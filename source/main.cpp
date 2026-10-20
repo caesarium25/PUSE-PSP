@@ -1,5 +1,4 @@
 #include <pspctrl.h>
-#include <pspdebug.h>
 #include <pspkernel.h>
 #include <psppower.h>
 
@@ -14,6 +13,7 @@
 #include <puse/core/SaveHealth.hpp>
 #include <puse/core/SaveSession.hpp>
 #include <puse/io/DataLoader.hpp>
+#include <puse/ui/Renderer.hpp>
 
 #include <algorithm>
 #include <array>
@@ -31,7 +31,15 @@
 #include <unordered_map>
 #include <vector>
 
-PSP_MODULE_INFO("PUSE-PSP", PSP_MODULE_USER, 0, 4);
+#define pspDebugScreenInit puse::ui::Init
+#define pspDebugScreenClear puse::ui::Clear
+#define pspDebugScreenSetTextColor puse::ui::SetTextColor
+#define pspDebugScreenSetBackColor puse::ui::SetBackColor
+#define pspDebugScreenEnableBackColor puse::ui::EnableBackColor
+#define pspDebugScreenSetXY puse::ui::SetXY
+#define pspDebugScreenPrintf puse::ui::Printf
+
+PSP_MODULE_INFO("PUSE-PSP", PSP_MODULE_USER, 0, 5);
 PSP_MAIN_THREAD_ATTR(PSP_THREAD_ATTR_USER | PSP_THREAD_ATTR_VFPU);
 PSP_HEAP_SIZE_KB(-1024);
 
@@ -88,7 +96,10 @@ void PrintUiLine(const std::string &value, const uint32_t text_color,
     pspDebugScreenEnableBackColor(1);
     pspDebugScreenSetTextColor(text_color);
     pspDebugScreenSetBackColor(background_color);
+    puse::ui::SetBold(text_color == kColorGreen || text_color == kColorCyan ||
+        text_color == kColorAmber || text_color == kColorRed);
     pspDebugScreenPrintf("%-59s\n", Truncate(value, 59).c_str());
+    puse::ui::SetBold(false);
     pspDebugScreenSetBackColor(kColorBackground);
     pspDebugScreenSetTextColor(kColorText);
 }
@@ -107,7 +118,7 @@ void DrawHeader(const std::string &title, const std::string &subtitle = "") {
     pspDebugScreenSetBackColor(kColorBackground);
     pspDebugScreenClear();
     pspDebugScreenSetXY(0, 0);
-    PrintUiLine(" PUSE-PSP 0.4.0", kColorMuted, kColorHeader);
+    PrintUiLine(" PUSE-PSP 0.5.0", kColorMuted, kColorHeader);
     PrintUiLine(" " + title, kColorGreen, kColorHeader);
     PrintUiLine(" " + (subtitle.empty() ? "Offline Unbound save editor" : subtitle), kColorMuted, kColorHeader);
     PrintUiLine("", kColorCyan, kColorCyan);
@@ -1865,13 +1876,14 @@ void App::Run() {
 
 int main() {
     SetupCallbacks();
-    pspDebugScreenInit();
+    if (!pspDebugScreenInit()) sceKernelExitGame();
     sceCtrlSetSamplingCycle(0);
     sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
     scePowerSetClockFrequency(333, 333, 166);
 
     App app;
     app.Run();
+    puse::ui::Shutdown();
     sceKernelExitGame();
     return 0;
 }

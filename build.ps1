@@ -30,6 +30,7 @@ $common = @(
 $sources = @(
     Get-ChildItem (Join-Path $project 'source\core') -Filter '*.cpp'
     Get-ChildItem (Join-Path $project 'source\io') -Filter '*.cpp'
+    Get-ChildItem (Join-Path $project 'source\ui') -Filter '*.cpp'
     Get-Item (Join-Path $project 'source\main.cpp')
 )
 
@@ -60,7 +61,9 @@ $linkArgs = @(
     "-L$($pspdev.Path)\psp\lib",
     "-L$sdk\lib",
     "-Wl,-q,-T$sdk\lib\linkfile.prx", '-Wl,--gc-sections', '-Wl,-zmax-page-size=128',
-    '-lpspdebug', '-lpspdisplay', '-lpspge', '-lpspctrl', '-lpsppower',
+    '-lSDL2_ttf', '-lharfbuzz', '-lfreetype', '-lbz2', '-lpng16', '-lz',
+    '-lSDL2main', '-lSDL2', '-lGL', '-lpspvram', '-lpspaudio', '-lpspvfpu',
+    '-lpspdisplay', '-lpspgu', '-lpspge', '-lpsphprm', '-lpspctrl', '-lpsppower',
     '-lpspnet', '-lpspnet_apctl', '-lm',
     '-o', $elf
 )

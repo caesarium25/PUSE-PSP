@@ -17,9 +17,9 @@ backup before replacing the original save.
 
 ## Download and install
 
-**[Download PUSE-PSP v0.4.0](https://github.com/caesarium25/PUSE-PSP/releases/download/v0.4.0/PUSE-PSP-v0.4.0.zip)**
+**[Download PUSE-PSP v0.5.0](https://github.com/caesarium25/PUSE-PSP/releases/download/v0.5.0/PUSE-PSP-v0.5.0.zip)**
 
-1. Download `PUSE-PSP-v0.4.0.zip` using the link above. Older and future builds
+1. Download `PUSE-PSP-v0.5.0.zip` using the link above. Older and future builds
    are available on the repository's [Releases](../../releases) page.
 2. Extract the complete `PUSE-PSP` folder to `ms0:/PSP/GAME/`.
 3. Confirm that `EBOOT.PBP` and the `data` folder are both present inside
@@ -50,8 +50,9 @@ calculated stats. `L` and `R` change the selected value by 10.
 
 - Original `ICON0.PNG` and `PIC1.PNG` artwork for the PSP Game menu, built
   directly into the EBOOT. The background credits Zannael and caesarium25.
-- A redesigned in-app visual system with stable header bands, highlighted
-  selections, dedicated stat panels, and consistent status colors.
+- A native SDL2 graphical renderer with Source Code Pro fonts, hardware-drawn
+  surfaces, selection panels, controller badges, stat panels, and consistent
+  status colors. The app no longer uses the PSP debug-text display backend.
 
 ### Party and PC
 
@@ -176,6 +177,10 @@ and the upstream MIT license is included as [LICENSE-PUSE](LICENSE-PUSE).
 
 Move details and compatibility labels are compiled from the
 [Pokemon Unbound Wiki](https://unboundwiki.com/).
+
+The in-app typeface is
+[Source Code Pro](https://github.com/adobe-fonts/source-code-pro), distributed
+under the SIL Open Font License included in `data/ui/FONT-LICENSE.md`.
 
 Pokemon, Pokemon Unbound, and related names and assets belong to their respective
 owners. PUSE-PSP is an unofficial community project and is not affiliated with
