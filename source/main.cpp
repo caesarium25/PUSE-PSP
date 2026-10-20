@@ -31,7 +31,7 @@
 #include <unordered_map>
 #include <vector>
 
-PSP_MODULE_INFO("PUSE-PSP", PSP_MODULE_USER, 0, 3);
+PSP_MODULE_INFO("PUSE-PSP", PSP_MODULE_USER, 0, 4);
 PSP_MAIN_THREAD_ATTR(PSP_THREAD_ATTR_USER | PSP_THREAD_ATTR_VFPU);
 PSP_HEAP_SIZE_KB(-1024);
 
@@ -40,6 +40,22 @@ namespace {
 constexpr uint32_t kSaveBodySize = 0x20000;
 constexpr uint32_t kSaveRtcSize = 0x20010;
 constexpr int kVisibleRows = 23;
+
+constexpr uint32_t Rgb(const uint8_t red, const uint8_t green, const uint8_t blue) {
+    return static_cast<uint32_t>(red) | (static_cast<uint32_t>(green) << 8U) |
+        (static_cast<uint32_t>(blue) << 16U);
+}
+
+constexpr uint32_t kColorBackground = Rgb(10, 17, 19);
+constexpr uint32_t kColorHeader = Rgb(17, 29, 31);
+constexpr uint32_t kColorSurface = Rgb(21, 35, 37);
+constexpr uint32_t kColorSelected = Rgb(18, 72, 56);
+constexpr uint32_t kColorText = Rgb(239, 245, 244);
+constexpr uint32_t kColorMuted = Rgb(143, 164, 163);
+constexpr uint32_t kColorGreen = Rgb(42, 232, 145);
+constexpr uint32_t kColorCyan = Rgb(55, 205, 226);
+constexpr uint32_t kColorAmber = Rgb(245, 185, 65);
+constexpr uint32_t kColorRed = Rgb(245, 91, 91);
 
 bool g_running = true;
 
@@ -67,19 +83,35 @@ std::string Truncate(const std::string &value, size_t width) {
     return value.substr(0, width - 3) + "...";
 }
 
+void PrintUiLine(const std::string &value, const uint32_t text_color,
+                 const uint32_t background_color = kColorBackground) {
+    pspDebugScreenEnableBackColor(1);
+    pspDebugScreenSetTextColor(text_color);
+    pspDebugScreenSetBackColor(background_color);
+    pspDebugScreenPrintf("%-59s\n", Truncate(value, 59).c_str());
+    pspDebugScreenSetBackColor(kColorBackground);
+    pspDebugScreenSetTextColor(kColorText);
+}
+
+void PrintMenuRow(const std::string &label, const bool selected) {
+    PrintUiLine(std::string(selected ? "> " : "  ") + Truncate(label, 57),
+        selected ? kColorGreen : kColorText,
+        selected ? kColorSelected : kColorBackground);
+}
+
+void PrintHint(const std::string &hint) {
+    PrintUiLine(" " + hint, kColorMuted, kColorHeader);
+}
+
 void DrawHeader(const std::string &title, const std::string &subtitle = "") {
+    pspDebugScreenSetBackColor(kColorBackground);
     pspDebugScreenClear();
-    pspDebugScreenSetTextColor(0x00FFFFFF);
-    pspDebugScreenPrintf("PUSE-PSP 0.3.0\n");
-    pspDebugScreenSetTextColor(0x0000FFFF);
-    pspDebugScreenPrintf("%s\n", Truncate(title, 59).c_str());
-    pspDebugScreenSetTextColor(0x00808080);
-    pspDebugScreenPrintf("------------------------------------------------------------\n");
-    if (!subtitle.empty()) {
-        pspDebugScreenSetTextColor(0x00C0C0C0);
-        pspDebugScreenPrintf("%s\n", Truncate(subtitle, 59).c_str());
-    }
-    pspDebugScreenSetTextColor(0x00FFFFFF);
+    pspDebugScreenSetXY(0, 0);
+    PrintUiLine(" PUSE-PSP 0.4.0", kColorMuted, kColorHeader);
+    PrintUiLine(" " + title, kColorGreen, kColorHeader);
+    PrintUiLine(" " + (subtitle.empty() ? "Offline Unbound save editor" : subtitle), kColorMuted, kColorHeader);
+    PrintUiLine("", kColorCyan, kColorCyan);
+    pspDebugScreenSetTextColor(kColorText);
 }
 
 uint32_t WaitButton() {
@@ -128,15 +160,13 @@ int Menu(const std::string &title, const std::vector<std::string> &items,
         const int last = std::min(static_cast<int>(items.size()), first + kVisibleRows);
         for (int i = first; i < last; ++i) {
             if (i == selected) {
-                pspDebugScreenSetTextColor(0x0000FF00);
-                pspDebugScreenPrintf("> %-57s\n", Truncate(items[i], 57).c_str());
+                PrintMenuRow(items[i], true);
             } else {
-                pspDebugScreenSetTextColor(0x00FFFFFF);
-                pspDebugScreenPrintf("  %-57s\n", Truncate(items[i], 57).c_str());
+                PrintMenuRow(items[i], false);
             }
         }
-        pspDebugScreenSetTextColor(0x00808080);
-        pspDebugScreenPrintf("\n[O] Select  [X] Back  [Up/Down] Move\n");
+        pspDebugScreenPrintf("\n");
+        PrintHint("[O] Select  [X] Back  [Up/Down] Move");
 
         const uint32_t key = WaitButton();
         if (key & PSP_CTRL_UP) selected = (selected + static_cast<int>(items.size()) - 1) % items.size();
@@ -152,26 +182,27 @@ int Menu(const std::string &title, const std::vector<std::string> &items,
 void DrawBattlePreview(const puse::core::BattlePreview &preview,
                        const puse::core::BattlePreview *baseline = nullptr,
                        const bool show_differences = false) {
-    pspDebugScreenSetTextColor(0x0000FFFF);
-    pspDebugScreenPrintf("Calculated Stats\n");
+    PrintUiLine(" CALCULATED STATS", kColorCyan, kColorSurface);
     if (!preview.available) {
-        pspDebugScreenSetTextColor(0x00C0C0C0);
-        pspDebugScreenPrintf("Unavailable for this species.\n\n");
+        PrintUiLine(" Unavailable for this species.", kColorMuted, kColorSurface);
+        PrintUiLine("", kColorMuted, kColorSurface);
+        PrintUiLine("", kColorMuted, kColorSurface);
         return;
     }
     static const char *kNames[] = {"HP", "ATK", "DEF", "SPE", "SPA", "SPD"};
-    const auto print_stat = [&](const int index) {
-        pspDebugScreenSetTextColor(0x00FFFFFF);
-        pspDebugScreenPrintf("%s %3u", kNames[index], preview.stats[index]);
+    const auto stat_text = [&](const int index) {
+        char text[24]{};
         if (show_differences && baseline != nullptr && baseline->available) {
             const int delta = static_cast<int>(preview.stats[index]) - baseline->stats[index];
-            pspDebugScreenPrintf("(%+d)", delta);
+            std::snprintf(text, sizeof(text), "%s %3u(%+d)", kNames[index], preview.stats[index], delta);
+        } else {
+            std::snprintf(text, sizeof(text), "%s %3u", kNames[index], preview.stats[index]);
         }
+        return std::string(text);
     };
-    print_stat(0); pspDebugScreenPrintf("  "); print_stat(1); pspDebugScreenPrintf("  "); print_stat(2); pspDebugScreenPrintf("\n");
-    print_stat(4); pspDebugScreenPrintf("  "); print_stat(5); pspDebugScreenPrintf("  "); print_stat(3); pspDebugScreenPrintf("\n");
-    pspDebugScreenSetTextColor(0x00808080);
-    pspDebugScreenPrintf("No battle modifiers (item/ability/weather/status/stages).\n");
+    PrintUiLine(" " + stat_text(0) + "   " + stat_text(1) + "   " + stat_text(2), kColorText, kColorSurface);
+    PrintUiLine(" " + stat_text(4) + "   " + stat_text(5) + "   " + stat_text(3), kColorText, kColorSurface);
+    PrintUiLine(" No item/ability/weather/status/stage modifiers", kColorMuted, kColorSurface);
 }
 
 int PokemonMenu(const std::string &title, const std::vector<std::string> &items,
@@ -186,11 +217,9 @@ int PokemonMenu(const std::string &title, const std::vector<std::string> &items,
         first = std::max(0, std::min(first, std::max(0, static_cast<int>(items.size()) - kRows)));
         const int last = std::min(static_cast<int>(items.size()), first + kRows);
         for (int i = first; i < last; ++i) {
-            pspDebugScreenSetTextColor(i == selected ? 0x0000FF00 : 0x00FFFFFF);
-            pspDebugScreenPrintf("%c %-57s\n", i == selected ? '>' : ' ', Truncate(items[i], 57).c_str());
+            PrintMenuRow(items[i], i == selected);
         }
-        pspDebugScreenSetTextColor(0x00808080);
-        pspDebugScreenPrintf("[O] Select  [X] Back  [Up/Down] Move\n");
+        PrintHint("[O] Select  [X] Back  [Up/Down] Move");
         const uint32_t key = WaitButton();
         if (key & PSP_CTRL_UP) selected = (selected + static_cast<int>(items.size()) - 1) % items.size();
         if (key & PSP_CTRL_DOWN) selected = (selected + 1) % items.size();
@@ -212,10 +241,10 @@ bool EditLevelWithPreview(const std::string &title, const int current,
         DrawHeader(title, "Live preview; O applies, X discards");
         const auto preview = puse::core::CalculateBattlePreview(species, value, nature, ivs, evs);
         DrawBattlePreview(preview, &baseline, true);
-        pspDebugScreenSetTextColor(0x00FFFFFF);
+        pspDebugScreenSetTextColor(kColorText);
         pspDebugScreenPrintf("\nLevel: %d\n\n", value);
-        pspDebugScreenSetTextColor(0x00808080);
-        pspDebugScreenPrintf("Left/Right: -/+1   L/R: -/+10\n[O] Apply  [X] Cancel\n");
+        PrintHint("Left/Right: -/+1   L/R: -/+10");
+        PrintHint("[O] Apply  [X] Cancel");
         const uint32_t key = WaitButton();
         if (key & PSP_CTRL_LEFT) value = std::max(1, value - 1);
         if (key & PSP_CTRL_RIGHT) value = std::min(100, value + 1);
@@ -232,7 +261,7 @@ bool ConfirmWithBattlePreview(const std::string &title, const std::string &quest
     while (g_running) {
         DrawHeader(title);
         DrawBattlePreview(preview);
-        pspDebugScreenSetTextColor(0x00FFFFFF);
+        pspDebugScreenSetTextColor(kColorText);
         pspDebugScreenPrintf("\n%s\n\n", Truncate(question, 59).c_str());
         pspDebugScreenPrintf("[O] Yes    [X] No\n");
         const uint32_t key = WaitButton();
@@ -499,14 +528,13 @@ int CatalogPicker(const std::string &title,
                     }
                 }
                 const std::string label = row_id == 0 ? "0 - None" : number + " - " + CatalogName(db, aliases, row_id);
-                pspDebugScreenSetTextColor(i == selected ? 0x0000FF00 : 0x00FFFFFF);
-                pspDebugScreenPrintf("%c %-57s\n", i == selected ? '>' : ' ', Truncate(label, 57).c_str());
+                PrintMenuRow(label, i == selected);
             }
-            pspDebugScreenSetTextColor(0x00808080);
-            pspDebugScreenPrintf("\n[O] Choose [X] Cancel [Triangle] Sort");
-            if (compatible != nullptr && allow_all_toggle) pspDebugScreenPrintf(" [Square] Mode");
-            if (move_details != nullptr) pspDebugScreenPrintf(" [Select] Details");
             pspDebugScreenPrintf("\n");
+            std::string hint = "[O] Choose [X] Cancel [Triangle] Sort";
+            if (compatible != nullptr && allow_all_toggle) hint += " [Square] Mode";
+            if (move_details != nullptr) hint += " [Select] Details";
+            PrintHint(hint);
             const uint32_t key = WaitButton();
             if (key & PSP_CTRL_UP) selected = (selected + static_cast<int>(ids.size()) - 1) % ids.size();
             if (key & PSP_CTRL_DOWN) selected = (selected + 1) % ids.size();
@@ -572,11 +600,9 @@ int NaturePicker(const int current, const uint16_t species, const int level,
         first = std::max(0, std::min(first, 25 - kRows));
         const int last = std::min(25, first + kRows);
         for (int i = first; i < last; ++i) {
-            pspDebugScreenSetTextColor(i == selected ? 0x0000FF00 : 0x00FFFFFF);
-            pspDebugScreenPrintf("%c %-57s\n", i == selected ? '>' : ' ', Truncate(kNatureLabels[i], 57).c_str());
+            PrintMenuRow(kNatureLabels[i], i == selected);
         }
-        pspDebugScreenSetTextColor(0x00808080);
-        pspDebugScreenPrintf("[O] Choose [X] Cancel [L/R] Page\n");
+        PrintHint("[O] Choose [X] Cancel [L/R] Page");
         const uint32_t key = WaitButton();
         if (key & PSP_CTRL_UP) selected = (selected + 24) % 25;
         if (key & PSP_CTRL_DOWN) selected = (selected + 1) % 25;
@@ -607,27 +633,30 @@ bool EditStatDraft(const std::string &title, const bool ivs,
         DrawHeader(title, "Draft preview; O applies all changes, X discards");
         DrawBattlePreview(preview, &original_preview, show_differences);
         if (ivs) {
-            pspDebugScreenSetTextColor(0x00C0C0C0);
-            pspDebugScreenPrintf("Hidden Power: %s\n", preview.hidden_power_type.c_str());
+            PrintUiLine(" Hidden Power: " + preview.hidden_power_type, kColorAmber, kColorSurface);
         } else {
             int total = 0;
             for (const uint8_t value : values) total += value;
-            pspDebugScreenSetTextColor(total > 510 ? 0x000000FF : 0x00C0C0C0);
-            if (total > 510) pspDebugScreenPrintf("EV Total: %d/510  OVER LIMIT by %d\n", total, total - 510);
-            else pspDebugScreenPrintf("EV Total: %d/510  Remaining: %d\n", total, 510 - total);
+            const std::string status = total > 510
+                ? " EV Total: " + std::to_string(total) + "/510  OVER LIMIT by " + std::to_string(total - 510)
+                : " EV Total: " + std::to_string(total) + "/510  Remaining: " + std::to_string(510 - total);
+            PrintUiLine(status, total > 510 ? kColorRed : kColorAmber, kColorSurface);
         }
         for (int i = 0; i < 6; ++i) {
-            pspDebugScreenSetTextColor(i == selected ? 0x0000FF00 : 0x00FFFFFF);
             const int delta = static_cast<int>(preview.stats[i]) - original_preview.stats[i];
-            pspDebugScreenPrintf("%c %s %s %3u   Stat %3u", i == selected ? '>' : ' ', kNames[i],
-                ivs ? "IV" : "EV", values[i], preview.stats[i]);
-            if (show_differences && delta != 0) pspDebugScreenPrintf(" (%+d)", delta);
-            pspDebugScreenPrintf("\n");
+            char row[60]{};
+            if (show_differences && delta != 0) {
+                std::snprintf(row, sizeof(row), "%s %s %3u   Stat %3u (%+d)", kNames[i],
+                    ivs ? "IV" : "EV", values[i], preview.stats[i], delta);
+            } else {
+                std::snprintf(row, sizeof(row), "%s %s %3u   Stat %3u", kNames[i],
+                    ivs ? "IV" : "EV", values[i], preview.stats[i]);
+            }
+            PrintMenuRow(row, i == selected);
         }
-        pspDebugScreenSetTextColor(0x00808080);
-        pspDebugScreenPrintf("Up/Down stat  Left/Right -/+1  L/R -/+10\n");
-        pspDebugScreenPrintf("Triangle Max  Square Zero  Select Deltas\n");
-        pspDebugScreenPrintf("[O] Apply  [X] Discard\n");
+        PrintHint("Up/Down stat  Left/Right -/+1  L/R -/+10");
+        PrintHint("Triangle Max  Square Zero  Select Deltas");
+        PrintHint("[O] Apply  [X] Discard");
         const uint32_t key = WaitButton();
         if (key & PSP_CTRL_UP) selected = (selected + 5) % 6;
         if (key & PSP_CTRL_DOWN) selected = (selected + 1) % 6;

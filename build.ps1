@@ -47,6 +47,11 @@ $elf = Join-Path $build 'puse-psp.elf'
 $prx = Join-Path $build 'puse-psp.prx'
 $sfo = Join-Path $build 'PARAM.SFO'
 $eboot = Join-Path $dist 'EBOOT.PBP'
+$icon0 = Join-Path $project 'assets\ICON0.PNG'
+$pic1 = Join-Path $project 'assets\PIC1.PNG'
+if (!(Test-Path -LiteralPath $icon0) -or !(Test-Path -LiteralPath $pic1)) {
+    throw 'Missing PSP artwork under assets (ICON0.PNG and PIC1.PNG are required)'
+}
 
 $linkArgs = @(
     "-specs=$sdk\lib\prxspecs",
@@ -69,7 +74,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Import fixup failed' }
 if ($LASTEXITCODE -ne 0) { throw 'PRX generation failed' }
 & mksfoex.exe -d MEMSIZE=1 'PUSE-PSP' $sfo
 if ($LASTEXITCODE -ne 0) { throw 'SFO generation failed' }
-& pack-pbp.exe $eboot $sfo NULL NULL NULL NULL NULL $prx NULL
+& pack-pbp.exe $eboot $sfo $icon0 NULL NULL $pic1 NULL $prx NULL
 if ($LASTEXITCODE -ne 0) { throw 'EBOOT packaging failed' }
 
 $distData = Join-Path $dist 'data'
