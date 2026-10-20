@@ -17,9 +17,9 @@ backup before replacing the original save.
 
 ## Download and install
 
-**[Download PUSE-PSP v0.5.0](https://github.com/caesarium25/PUSE-PSP/releases/download/v0.5.0/PUSE-PSP-v0.5.0.zip)**
+**[Download PUSE-PSP v0.5.1](https://github.com/caesarium25/PUSE-PSP/releases/download/v0.5.1/PUSE-PSP-v0.5.1.zip)**
 
-1. Download `PUSE-PSP-v0.5.0.zip` using the link above. Older and future builds
+1. Download `PUSE-PSP-v0.5.1.zip` using the link above. Older and future builds
    are available on the repository's [Releases](../../releases) page.
 2. Extract the complete `PUSE-PSP` folder to `ms0:/PSP/GAME/`.
 3. Confirm that `EBOOT.PBP` and the `data` folder are both present inside
@@ -48,11 +48,13 @@ calculated stats. `L` and `R` change the selected value by 10.
 
 ## Features
 
-- Original `ICON0.PNG` and `PIC1.PNG` artwork for the PSP Game menu, built
-  directly into the EBOOT. The background credits Zannael and caesarium25.
+- Hoopa `ICON0.PNG` and `PIC1.PNG` artwork for the PSP Game menu, built directly
+  into the EBOOT. The background credits Zannael and caesarium25.
 - A native SDL2 graphical renderer with Source Code Pro fonts, hardware-drawn
   surfaces, selection panels, controller badges, stat panels, and consistent
   status colors. The app no longer uses the PSP debug-text display backend.
+- A dedicated save picker shows filenames in the list and wraps the selected
+  save's complete path into a readable panel below it.
 
 ### Party and PC
 

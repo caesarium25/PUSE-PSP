@@ -16,10 +16,10 @@ namespace {
 
 constexpr int kWidth = 480;
 constexpr int kHeight = 272;
-constexpr int kColumns = 60;
-constexpr int kRows = 30;
-constexpr int kCellWidth = 8;
-constexpr int kCellHeight = 9;
+constexpr int kColumns = 40;
+constexpr int kRows = 17;
+constexpr int kCellWidth = 12;
+constexpr int kCellHeight = 16;
 constexpr int kFirstGlyph = 32;
 constexpr int kLastGlyph = 126;
 
@@ -29,12 +29,21 @@ struct Glyph {
     int height = 0;
 };
 
+struct Cell {
+    char character = ' ';
+    uint32_t text_color = 0x00FFFFFF;
+    uint32_t back_color = 0x00000000;
+    bool background_enabled = true;
+    bool bold = false;
+};
+
 SDL_Window *g_window = nullptr;
 SDL_Renderer *g_renderer = nullptr;
 TTF_Font *g_regular = nullptr;
 TTF_Font *g_semibold = nullptr;
 std::array<Glyph, kLastGlyph - kFirstGlyph + 1> g_regular_glyphs{};
 std::array<Glyph, kLastGlyph - kFirstGlyph + 1> g_semibold_glyphs{};
+std::array<Cell, kColumns * kRows> g_cells{};
 uint32_t g_text_color = 0x00FFFFFF;
 uint32_t g_back_color = 0x00000000;
 bool g_background_enabled = true;
@@ -89,52 +98,56 @@ void Advance() {
     if (g_cursor_y >= kRows) g_cursor_y = kRows - 1;
 }
 
-void DrawGlyph(const char character) {
-    const SDL_Rect cell{g_cursor_x * kCellWidth, g_cursor_y * kCellHeight,
-                        kCellWidth, kCellHeight};
-    if (g_background_enabled) {
-        SetDrawColor(g_back_color);
-        SDL_RenderFillRect(g_renderer, &cell);
+void DrawCell(const int x, const int y, const Cell &value) {
+    const SDL_Rect bounds{x * kCellWidth, y * kCellHeight, kCellWidth, kCellHeight};
+    if (value.background_enabled) {
+        SetDrawColor(value.back_color);
+        SDL_RenderFillRect(g_renderer, &bounds);
     }
-    const int code = static_cast<unsigned char>(character);
-    if (code >= kFirstGlyph && code <= kLastGlyph && character != ' ') {
-        auto &glyphs = g_bold ? g_semibold_glyphs : g_regular_glyphs;
+    const int code = static_cast<unsigned char>(value.character);
+    if (code >= kFirstGlyph && code <= kLastGlyph && value.character != ' ') {
+        auto &glyphs = value.bold ? g_semibold_glyphs : g_regular_glyphs;
         Glyph &glyph = glyphs[static_cast<size_t>(code - kFirstGlyph)];
-        const SDL_Color text = ToColor(g_text_color);
+        const SDL_Color text = ToColor(value.text_color);
         SDL_SetTextureColorMod(glyph.texture, text.r, text.g, text.b);
-        const int target_height = kCellHeight - 1;
-        const int target_width = std::clamp(
-            glyph.height == 0 ? kCellWidth - 1 : glyph.width * target_height / glyph.height,
-            1, kCellWidth);
+        // Keep glyphs at their native rasterized size. Scaling small TTF glyphs
+        // down to the old 8x9 grid made them muddy on the PSP LCD.
         const SDL_Rect target{
-            cell.x + (kCellWidth - target_width) / 2,
-            cell.y,
-            target_width,
-            target_height,
+            bounds.x + (kCellWidth - glyph.width) / 2,
+            bounds.y + (kCellHeight - glyph.height) / 2,
+            glyph.width,
+            glyph.height,
         };
+        SDL_RenderSetClipRect(g_renderer, &bounds);
         SDL_RenderCopy(g_renderer, glyph.texture, nullptr, &target);
+        SDL_RenderSetClipRect(g_renderer, nullptr);
     }
+}
+
+void RenderFrame() {
+    SetDrawColor(g_back_color);
+    SDL_RenderClear(g_renderer);
+    for (int y = 0; y < kRows; ++y) {
+        for (int x = 0; x < kColumns; ++x) {
+            DrawCell(x, y, g_cells[static_cast<size_t>(y * kColumns + x)]);
+        }
+    }
+    SDL_RenderPresent(g_renderer);
+}
+
+void DrawGlyph(const char character) {
+    g_cells[static_cast<size_t>(g_cursor_y * kColumns + g_cursor_x)] = {
+        character, g_text_color, g_back_color, g_background_enabled, g_bold};
     Advance();
 }
 
 void DrawBadge(const char label, const uint32_t color) {
-    const int x = g_cursor_x * kCellWidth + 1;
-    const int y = g_cursor_y * kCellHeight;
-    const SDL_Rect badge{x, y, kCellWidth * 2 + 4, kCellHeight};
-    SetDrawColor(color);
-    SDL_RenderFillRect(g_renderer, &badge);
-    const uint32_t previous_text = g_text_color;
-    const bool previous_bold = g_bold;
-    const bool previous_background = g_background_enabled;
-    g_text_color = 0x00101412;
-    g_bold = true;
-    g_background_enabled = false;
-    ++g_cursor_x;
-    DrawGlyph(label);
-    ++g_cursor_x;
-    g_text_color = previous_text;
-    g_bold = previous_bold;
-    g_background_enabled = previous_background;
+    for (int offset = 0; offset < 3; ++offset) {
+        const char character = offset == 1 ? label : ' ';
+        g_cells[static_cast<size_t>(g_cursor_y * kColumns + g_cursor_x)] = {
+            character, 0x00101412, color, true, true};
+        Advance();
+    }
 }
 
 bool Match(const std::string &text, const size_t offset, const char *token) {
@@ -163,7 +176,7 @@ void DrawText(const std::string &text) {
             DrawGlyph(character);
         }
     }
-    SDL_RenderPresent(g_renderer);
+    RenderFrame();
 }
 
 } // namespace
@@ -180,8 +193,8 @@ bool Init() {
 
     const std::string regular_path = puse::io::ResolveAssetPath("data/ui/SourceCodePro-Regular.ttf");
     const std::string semibold_path = puse::io::ResolveAssetPath("data/ui/SourceCodePro-Semibold.ttf");
-    g_regular = TTF_OpenFont(regular_path.c_str(), 12);
-    g_semibold = TTF_OpenFont(semibold_path.c_str(), 12);
+    g_regular = TTF_OpenFont(regular_path.c_str(), 14);
+    g_semibold = TTF_OpenFont(semibold_path.c_str(), 14);
     if (g_regular == nullptr || g_semibold == nullptr) return false;
     TTF_SetFontHinting(g_regular, TTF_HINTING_MONO);
     TTF_SetFontHinting(g_semibold, TTF_HINTING_MONO);
@@ -208,11 +221,12 @@ void Shutdown() {
 
 void Clear() {
     if (g_renderer == nullptr) return;
-    SetDrawColor(g_back_color);
-    SDL_RenderClear(g_renderer);
+    for (auto &cell : g_cells) {
+        cell = {' ', g_text_color, g_back_color, true, false};
+    }
     g_cursor_x = 0;
     g_cursor_y = 0;
-    SDL_RenderPresent(g_renderer);
+    RenderFrame();
 }
 
 void SetTextColor(const uint32_t color) { g_text_color = color; }

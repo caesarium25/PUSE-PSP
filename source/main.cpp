@@ -47,7 +47,8 @@ namespace {
 
 constexpr uint32_t kSaveBodySize = 0x20000;
 constexpr uint32_t kSaveRtcSize = 0x20010;
-constexpr int kVisibleRows = 23;
+constexpr int kUiWidth = 39;
+constexpr int kVisibleRows = 11;
 
 constexpr uint32_t Rgb(const uint8_t red, const uint8_t green, const uint8_t blue) {
     return static_cast<uint32_t>(red) | (static_cast<uint32_t>(green) << 8U) |
@@ -98,14 +99,14 @@ void PrintUiLine(const std::string &value, const uint32_t text_color,
     pspDebugScreenSetBackColor(background_color);
     puse::ui::SetBold(text_color == kColorGreen || text_color == kColorCyan ||
         text_color == kColorAmber || text_color == kColorRed);
-    pspDebugScreenPrintf("%-59s\n", Truncate(value, 59).c_str());
+    pspDebugScreenPrintf("%-39s\n", Truncate(value, kUiWidth).c_str());
     puse::ui::SetBold(false);
     pspDebugScreenSetBackColor(kColorBackground);
     pspDebugScreenSetTextColor(kColorText);
 }
 
 void PrintMenuRow(const std::string &label, const bool selected) {
-    PrintUiLine(std::string(selected ? "> " : "  ") + Truncate(label, 57),
+    PrintUiLine(std::string(selected ? "> " : "  ") + Truncate(label, kUiWidth - 2),
         selected ? kColorGreen : kColorText,
         selected ? kColorSelected : kColorBackground);
 }
@@ -118,7 +119,7 @@ void DrawHeader(const std::string &title, const std::string &subtitle = "") {
     pspDebugScreenSetBackColor(kColorBackground);
     pspDebugScreenClear();
     pspDebugScreenSetXY(0, 0);
-    PrintUiLine(" PUSE-PSP 0.5.0", kColorMuted, kColorHeader);
+    PrintUiLine(" PUSE-PSP 0.5.1", kColorMuted, kColorHeader);
     PrintUiLine(" " + title, kColorGreen, kColorHeader);
     PrintUiLine(" " + (subtitle.empty() ? "Offline Unbound save editor" : subtitle), kColorMuted, kColorHeader);
     PrintUiLine("", kColorCyan, kColorCyan);
@@ -140,14 +141,14 @@ uint32_t WaitButton() {
 
 void Message(const std::string &title, const std::vector<std::string> &lines) {
     DrawHeader(title);
-    for (const auto &line : lines) pspDebugScreenPrintf("%s\n", Truncate(line, 59).c_str());
+    for (const auto &line : lines) pspDebugScreenPrintf("%s\n", Truncate(line, kUiWidth).c_str());
     pspDebugScreenPrintf("\n[O/X] Continue");
     WaitButton();
 }
 
 bool Confirm(const std::string &title, const std::string &question) {
     DrawHeader(title);
-    pspDebugScreenPrintf("%s\n\n", Truncate(question, 59).c_str());
+    pspDebugScreenPrintf("%s\n\n", Truncate(question, kUiWidth).c_str());
     pspDebugScreenPrintf("[O] Yes    [X] No\n");
     while (g_running) {
         const uint32_t key = WaitButton();
@@ -176,14 +177,65 @@ int Menu(const std::string &title, const std::vector<std::string> &items,
                 PrintMenuRow(items[i], false);
             }
         }
-        pspDebugScreenPrintf("\n");
-        PrintHint("[O] Select  [X] Back  [Up/Down] Move");
+        PrintHint("[O] Select [X] Back  D-pad Move");
 
         const uint32_t key = WaitButton();
         if (key & PSP_CTRL_UP) selected = (selected + static_cast<int>(items.size()) - 1) % items.size();
         if (key & PSP_CTRL_DOWN) selected = (selected + 1) % items.size();
         if (key & PSP_CTRL_LTRIGGER) selected = std::max(0, selected - kVisibleRows);
         if (key & PSP_CTRL_RTRIGGER) selected = std::min(static_cast<int>(items.size()) - 1, selected + kVisibleRows);
+        if (key & PSP_CTRL_CIRCLE) return selected;
+        if (key & PSP_CTRL_CROSS) return -1;
+    }
+    return -1;
+}
+
+std::string PathFileName(const std::string &path) {
+    const size_t separator = path.find_last_of("/\\");
+    return separator == std::string::npos ? path : path.substr(separator + 1);
+}
+
+std::vector<std::string> WrapPath(const std::string &path, const size_t width) {
+    std::vector<std::string> lines;
+    for (size_t offset = 0; offset < path.size(); offset += width) {
+        lines.push_back(path.substr(offset, width));
+    }
+    if (lines.empty()) lines.push_back("");
+    return lines;
+}
+
+int SaveMenu(const std::vector<std::string> &paths) {
+    constexpr int kSaveRows = 5;
+    constexpr int kPathRows = 5;
+    int selected = 0;
+    while (g_running) {
+        DrawHeader("Choose save", std::to_string(paths.size()) + " compatible files found");
+        int first = selected - kSaveRows / 2;
+        first = std::max(0, std::min(first,
+            std::max(0, static_cast<int>(paths.size()) - kSaveRows)));
+        const int last = std::min(static_cast<int>(paths.size()), first + kSaveRows);
+        for (int i = first; i < last; ++i) {
+            PrintMenuRow(PathFileName(paths[static_cast<size_t>(i)]), i == selected);
+        }
+        for (int i = last - first; i < kSaveRows; ++i) {
+            PrintUiLine("", kColorText);
+        }
+        PrintUiLine(" FULL PATH", kColorCyan, kColorSurface);
+        const auto path_lines = WrapPath(paths[static_cast<size_t>(selected)], kUiWidth - 1);
+        for (int i = 0; i < kPathRows; ++i) {
+            const std::string line = i < static_cast<int>(path_lines.size())
+                ? " " + path_lines[static_cast<size_t>(i)] : "";
+            PrintUiLine(line, kColorText, kColorSurface);
+        }
+        PrintHint("[O] Open [X] Back  D-pad Move");
+
+        const uint32_t key = WaitButton();
+        if (key & PSP_CTRL_UP) selected =
+            (selected + static_cast<int>(paths.size()) - 1) % paths.size();
+        if (key & PSP_CTRL_DOWN) selected = (selected + 1) % paths.size();
+        if (key & PSP_CTRL_LTRIGGER) selected = std::max(0, selected - kSaveRows);
+        if (key & PSP_CTRL_RTRIGGER) selected =
+            std::min(static_cast<int>(paths.size()) - 1, selected + kSaveRows);
         if (key & PSP_CTRL_CIRCLE) return selected;
         if (key & PSP_CTRL_CROSS) return -1;
     }
@@ -213,13 +265,13 @@ void DrawBattlePreview(const puse::core::BattlePreview &preview,
     };
     PrintUiLine(" " + stat_text(0) + "   " + stat_text(1) + "   " + stat_text(2), kColorText, kColorSurface);
     PrintUiLine(" " + stat_text(4) + "   " + stat_text(5) + "   " + stat_text(3), kColorText, kColorSurface);
-    PrintUiLine(" No item/ability/weather/status/stage modifiers", kColorMuted, kColorSurface);
+    PrintUiLine(" Raw stats; no battle modifiers", kColorMuted, kColorSurface);
 }
 
 int PokemonMenu(const std::string &title, const std::vector<std::string> &items,
                 const std::string &subtitle, const puse::core::BattlePreview &preview) {
     if (items.empty()) return -1;
-    constexpr int kRows = 15;
+    constexpr int kRows = 7;
     int selected = 0;
     while (g_running) {
         DrawHeader(title, subtitle);
@@ -230,7 +282,7 @@ int PokemonMenu(const std::string &title, const std::vector<std::string> &items,
         for (int i = first; i < last; ++i) {
             PrintMenuRow(items[i], i == selected);
         }
-        PrintHint("[O] Select  [X] Back  [Up/Down] Move");
+        PrintHint("[O] Select [X] Back  D-pad Move");
         const uint32_t key = WaitButton();
         if (key & PSP_CTRL_UP) selected = (selected + static_cast<int>(items.size()) - 1) % items.size();
         if (key & PSP_CTRL_DOWN) selected = (selected + 1) % items.size();
@@ -273,7 +325,7 @@ bool ConfirmWithBattlePreview(const std::string &title, const std::string &quest
         DrawHeader(title);
         DrawBattlePreview(preview);
         pspDebugScreenSetTextColor(kColorText);
-        pspDebugScreenPrintf("\n%s\n\n", Truncate(question, 59).c_str());
+        pspDebugScreenPrintf("\n%s\n\n", Truncate(question, kUiWidth).c_str());
         pspDebugScreenPrintf("[O] Yes    [X] No\n");
         const uint32_t key = WaitButton();
         if (key & PSP_CTRL_CIRCLE) return true;
@@ -524,7 +576,7 @@ int CatalogPicker(const std::string &title,
             }
             DrawHeader(title, subtitle);
             if (draw_preview) draw_preview(id);
-            const int visible_rows = draw_preview ? 15 : kVisibleRows;
+            const int visible_rows = draw_preview ? 7 : kVisibleRows;
             int first = selected - visible_rows / 2;
             first = std::max(0, std::min(first, std::max(0, static_cast<int>(ids.size()) - visible_rows)));
             const int last = std::min(static_cast<int>(ids.size()), first + visible_rows);
@@ -541,10 +593,9 @@ int CatalogPicker(const std::string &title,
                 const std::string label = row_id == 0 ? "0 - None" : number + " - " + CatalogName(db, aliases, row_id);
                 PrintMenuRow(label, i == selected);
             }
-            pspDebugScreenPrintf("\n");
-            std::string hint = "[O] Choose [X] Cancel [Triangle] Sort";
-            if (compatible != nullptr && allow_all_toggle) hint += " [Square] Mode";
-            if (move_details != nullptr) hint += " [Select] Details";
+            std::string hint = "[O] Choose [X] Back [Tri] Sort";
+            if (compatible != nullptr && allow_all_toggle) hint += " [Sq] Mode";
+            if (move_details != nullptr) hint += " [Sel] Info";
             PrintHint(hint);
             const uint32_t key = WaitButton();
             if (key & PSP_CTRL_UP) selected = (selected + static_cast<int>(ids.size()) - 1) % ids.size();
@@ -600,7 +651,7 @@ const std::array<const char *, 25> kNatureLabels = {{
 int NaturePicker(const int current, const uint16_t species, const int level,
                  const std::array<uint8_t, 6> &ivs,
                  const std::array<uint8_t, 6> &evs) {
-    constexpr int kRows = 14;
+    constexpr int kRows = 7;
     int selected = std::clamp(current, 0, 24);
     const auto baseline = puse::core::CalculateBattlePreview(species, level, static_cast<uint8_t>(current), ivs, evs);
     while (g_running) {
@@ -613,7 +664,7 @@ int NaturePicker(const int current, const uint16_t species, const int level,
         for (int i = first; i < last; ++i) {
             PrintMenuRow(kNatureLabels[i], i == selected);
         }
-        PrintHint("[O] Choose [X] Cancel [L/R] Page");
+        PrintHint("[O] Choose [X] Back  L/R Page");
         const uint32_t key = WaitButton();
         if (key & PSP_CTRL_UP) selected = (selected + 24) % 25;
         if (key & PSP_CTRL_DOWN) selected = (selected + 1) % 25;
@@ -665,9 +716,8 @@ bool EditStatDraft(const std::string &title, const bool ivs,
             }
             PrintMenuRow(row, i == selected);
         }
-        PrintHint("Up/Down stat  Left/Right -/+1  L/R -/+10");
-        PrintHint("Triangle Max  Square Zero  Select Deltas");
-        PrintHint("[O] Apply  [X] Discard");
+        PrintHint("D-pad edit L/R x10 Tri Max Sq Zero");
+        PrintHint("[O] Apply [X] Back [Select] Deltas");
         const uint32_t key = WaitButton();
         if (key & PSP_CTRL_UP) selected = (selected + 5) % 6;
         if (key & PSP_CTRL_DOWN) selected = (selected + 1) % 6;
@@ -930,9 +980,7 @@ bool App::SelectAndLoadSave() {
         });
         return false;
     }
-    std::vector<std::string> labels;
-    for (const auto &path : saves) labels.push_back(path);
-    const int selected = Menu("Choose save", labels, std::to_string(saves.size()) + " compatible files found");
+    const int selected = SaveMenu(saves);
     return selected >= 0 && LoadSave(saves[selected]);
 }
 
