@@ -67,6 +67,7 @@ constexpr uint32_t kColorAmber = Rgb(245, 185, 65);
 constexpr uint32_t kColorRed = Rgb(245, 91, 91);
 
 bool g_running = true;
+std::unordered_map<std::string, int> g_menu_positions;
 
 int ExitCallback(int, int, void *) {
     g_running = false;
@@ -119,7 +120,7 @@ void DrawHeader(const std::string &title, const std::string &subtitle = "") {
     pspDebugScreenSetBackColor(kColorBackground);
     pspDebugScreenClear();
     pspDebugScreenSetXY(0, 0);
-    PrintUiLine(" PUSE-PSP 0.5.1", kColorMuted, kColorHeader);
+    PrintUiLine(" PUSE-PSP 0.5.2", kColorMuted, kColorHeader);
     PrintUiLine(" " + title, kColorGreen, kColorHeader);
     PrintUiLine(" " + (subtitle.empty() ? "Offline Unbound save editor" : subtitle), kColorMuted, kColorHeader);
     PrintUiLine("", kColorCyan, kColorCyan);
@@ -159,12 +160,16 @@ bool Confirm(const std::string &title, const std::string &question) {
 }
 
 int Menu(const std::string &title, const std::vector<std::string> &items,
-         const std::string &subtitle = "", int initial = 0) {
+         const std::string &subtitle = "", int initial = -1,
+         int *horizontal_direction = nullptr) {
     if (items.empty()) {
         Message(title, {"No entries available."});
         return -1;
     }
-    int selected = std::max(0, std::min(initial, static_cast<int>(items.size()) - 1));
+    const auto remembered = g_menu_positions.find(title);
+    if (initial < 0 && remembered != g_menu_positions.end()) initial = remembered->second;
+    int selected = std::clamp(initial < 0 ? 0 : initial, 0, static_cast<int>(items.size()) - 1);
+    if (horizontal_direction != nullptr) *horizontal_direction = 0;
     while (g_running) {
         DrawHeader(title, subtitle);
         int first = selected - kVisibleRows / 2;
@@ -182,8 +187,14 @@ int Menu(const std::string &title, const std::vector<std::string> &items,
         const uint32_t key = WaitButton();
         if (key & PSP_CTRL_UP) selected = (selected + static_cast<int>(items.size()) - 1) % items.size();
         if (key & PSP_CTRL_DOWN) selected = (selected + 1) % items.size();
-        if (key & PSP_CTRL_LTRIGGER) selected = std::max(0, selected - kVisibleRows);
-        if (key & PSP_CTRL_RTRIGGER) selected = std::min(static_cast<int>(items.size()) - 1, selected + kVisibleRows);
+        if (horizontal_direction != nullptr && (key & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER))) {
+            *horizontal_direction = (key & PSP_CTRL_LTRIGGER) ? -1 : 1;
+            g_menu_positions[title] = selected;
+            return selected;
+        }
+        if (horizontal_direction == nullptr && (key & PSP_CTRL_LTRIGGER)) selected = std::max(0, selected - kVisibleRows);
+        if (horizontal_direction == nullptr && (key & PSP_CTRL_RTRIGGER)) selected = std::min(static_cast<int>(items.size()) - 1, selected + kVisibleRows);
+        g_menu_positions[title] = selected;
         if (key & PSP_CTRL_CIRCLE) return selected;
         if (key & PSP_CTRL_CROSS) return -1;
     }
@@ -272,7 +283,10 @@ int PokemonMenu(const std::string &title, const std::vector<std::string> &items,
                 const std::string &subtitle, const puse::core::BattlePreview &preview) {
     if (items.empty()) return -1;
     constexpr int kRows = 7;
-    int selected = 0;
+    const std::string position_key = "Pokemon editor|" + subtitle;
+    const auto remembered = g_menu_positions.find(position_key);
+    int selected = remembered == g_menu_positions.end()
+        ? 0 : std::clamp(remembered->second, 0, static_cast<int>(items.size()) - 1);
     while (g_running) {
         DrawHeader(title, subtitle);
         DrawBattlePreview(preview);
@@ -288,6 +302,7 @@ int PokemonMenu(const std::string &title, const std::vector<std::string> &items,
         if (key & PSP_CTRL_DOWN) selected = (selected + 1) % items.size();
         if (key & PSP_CTRL_LTRIGGER) selected = std::max(0, selected - kRows);
         if (key & PSP_CTRL_RTRIGGER) selected = std::min(static_cast<int>(items.size()) - 1, selected + kRows);
+        g_menu_positions[position_key] = selected;
         if (key & PSP_CTRL_CIRCLE) return selected;
         if (key & PSP_CTRL_CROSS) return -1;
     }
@@ -1579,23 +1594,31 @@ void App::ReviewPcLegality(const int box, const int slot) {
 }
 
 void App::PcMenu() {
-    int box = 1;
-    int selected = 0;
+    const int box_count = puse::core::PcStreamBoxCount();
+    static int remembered_box = 1;
+    static std::vector<int> box_positions;
+    if (box_positions.size() != static_cast<size_t>(box_count)) {
+        box_positions.assign(static_cast<size_t>(box_count), 0);
+    }
+    int box = std::clamp(remembered_box, 1, box_count);
     while (g_running) {
         const auto mons = puse::core::ParsePcBox(pc_stream_, box, species_);
         std::vector<std::string> rows(puse::core::kPcBoxSlotCount);
         for (int slot = 1; slot <= puse::core::kPcBoxSlotCount; ++slot) rows[slot - 1] = std::to_string(slot) + ". (empty)";
         for (const auto &mon : mons) rows[mon.slot - 1] = std::to_string(mon.slot) + ". " + mon.species_name + " Lv." + std::to_string(mon.level);
-        selected = Menu("PC Box " + std::to_string(box), rows,
-            "Select slot; use Box Change entry after slot 30", selected);
-        if (selected < 0) {
-            std::vector<std::string> boxes;
-            for (int i = 1; i <= puse::core::PcStreamBoxCount(); ++i) boxes.push_back("Box " + std::to_string(i));
-            const int next = Menu("Choose PC box", boxes, "Current: " + std::to_string(box), box - 1);
-            if (next < 0) return;
-            box = next + 1;
-            selected = 0;
+        int box_direction = 0;
+        const int selected = Menu("PC Box " + std::to_string(box), rows,
+            "L/R Change Box | O Open | X Back",
+            box_positions[static_cast<size_t>(box - 1)], &box_direction);
+        if (selected >= 0) box_positions[static_cast<size_t>(box - 1)] = selected;
+        if (box_direction != 0) {
+            box = ((box - 1 + box_direction + box_count) % box_count) + 1;
+            remembered_box = box;
             continue;
+        }
+        if (selected < 0) {
+            remembered_box = box;
+            return;
         }
         const int slot = selected + 1;
         const auto found = std::find_if(mons.begin(), mons.end(), [slot](const auto &mon) { return mon.slot == slot; });

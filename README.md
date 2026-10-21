@@ -17,9 +17,9 @@ backup before replacing the original save.
 
 ## Download and install
 
-**[Download PUSE-PSP v0.5.1](https://github.com/caesarium25/PUSE-PSP/releases/download/v0.5.1/PUSE-PSP-v0.5.1.zip)**
+**[Download PUSE-PSP v0.5.2](https://github.com/caesarium25/PUSE-PSP/releases/download/v0.5.2/PUSE-PSP-v0.5.2.zip)**
 
-1. Download `PUSE-PSP-v0.5.1.zip` using the link above. Older and future builds
+1. Download `PUSE-PSP-v0.5.2.zip` using the link above. Older and future builds
    are available on the repository's [Releases](../../releases) page.
 2. Extract the complete `PUSE-PSP` folder to `ms0:/PSP/GAME/`.
 3. Confirm that `EBOOT.PBP` and the `data` folder are both present inside
@@ -39,7 +39,7 @@ The application scans TempGBA and common PSP folders for 128 KiB `.sav` and
 | `X` | Cancel or go back |
 | `Triangle` | Switch numeric/ID and alphabetical sorting in catalogs |
 | `Square` | Switch Compatible and All Moves modes in the move catalog |
-| `L` / `R` | Move one page in long catalogs |
+| `L` / `R` | Move one page in long catalogs; change boxes in PC storage |
 | `Select` | Show full details for the highlighted move |
 
 In the IV and EV editors, `Triangle` sets the selected value to its legal
@@ -55,6 +55,8 @@ calculated stats. `L` and `R` change the selected value by 10.
   status colors. The app no longer uses the PSP debug-text display backend.
 - A dedicated save picker shows filenames in the list and wraps the selected
   save's complete path into a readable panel below it.
+- Menus remember the last highlighted row when returning from a submenu. PC
+  storage also remembers the last box and a separate highlighted slot per box.
 
 ### Party and PC
 
